@@ -130,8 +130,6 @@ int io_init(void *buffer, uint32_t len, uint32_t rank, uint32_t ranks)
 
 		ret = cci_get_event(endpoint, &event);
 		if (!ret) {
-			io_msg_t *rx = NULL;
-
 			fprintf(stderr, "%s: %s completed\n", __func__,
 					cci_event_type_str(event->type));
 
@@ -141,11 +139,6 @@ int io_init(void *buffer, uint32_t len, uint32_t rank, uint32_t ranks)
 				ready++;
 				if (!event->connect.status)
 					ready = -1;
-				break;
-			case CCI_EVENT_RECV:
-				rx = (void *)event->recv.ptr;
-				assert(rx->type == READY);
-				ready++;
 				break;
 			default:
 				break;
