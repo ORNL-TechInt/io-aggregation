@@ -1,15 +1,20 @@
-CCI = $(HOME)/projects/cci/build-sm-debug/darwin
-MPI = $(HOME)/projects/ompi/truk/build-no-cci/darwin
+ifndef CCI
+$(error Export path to CCI in variable named CCI)
+endif
+
+ifndef MPI
+$(error Export path to MPI in variable named MPI)
+endif
 
 CC = gcc
-CFLAGS = -g -O0 -std=c99 -D_XOPEN_SOURCE=500 -Wall -pedantic -I$(CCI)/include
+CFLAGS = -g -O0 -std=c99 -D_XOPEN_SOURCE=600 -Wall -pedantic -I$(CCI)/include
 LDFLAGS = -L$(CCI)/lib -lcci -lpthread
 OBJS = io.o
 
 C_OBJS = iod.o
 C_TARGETS = iod
 
-MPICC = mpicc
+MPICC = $(MPI)/bin/mpicc
 MPI_OBJS = test.o
 MPI_TARGETS = test
 
