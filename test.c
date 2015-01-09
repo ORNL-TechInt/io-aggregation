@@ -123,9 +123,9 @@ int main(int argc, char *argv[])
 	do {
 		c++;
 		tmp = tmp >> 1;
-	} while (tmp > len);
+	} while (tmp >= len);
 
-	latencies = calloc(c, sizeof(*latencies));
+	latencies = calloc(c*iters, sizeof(*latencies));
 	if (!latencies) {
 		perror("calloc():");
 		exit(EXIT_FAILURE);
@@ -183,7 +183,7 @@ int main(int argc, char *argv[])
 			write_it(buf, left);
 			gettimeofday(&end, NULL);
 
-			latencies[(j * c) + i] = usecs(start, end);
+			latencies[(j * iters) + i] = usecs(start, end);
 
 			if (rank == 0)
 				fprintf(stderr, "%d ", i);
@@ -215,7 +215,7 @@ int main(int argc, char *argv[])
 
 		for (i = 0; i < iters; i++) {
 			memset(line, 0, sizeof(line));
-			snprintf(line, sizeof(line), "%"PRIu64" ", latencies[(j * c) + i]);
+			snprintf(line, sizeof(line), "%"PRIu64" ", latencies[(j * iters) + i]);
 			write_it(line, strlen(line));
 		}
 
