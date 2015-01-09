@@ -13,10 +13,9 @@
 
 typedef enum io_msg_type {
 	CONNECT = 0,	/* C->S: rank */
-	READY,		/* C<-S: ready for write requests */
 	WRITE_REQ,	/* C->S: write request - length of write buffer */
 	WRITE_DONE,	/* C<-S: RMA Read is done - client can reuse buffer */
-	BYE,		/* C->S: client will disconnect */
+	BYE,		/* C->S: client done */
 	FINISHED	/* C<-S: finished writing */
 } io_msg_type_t;
 
@@ -31,17 +30,16 @@ typedef union io_msg {
 		cci_rma_handle_t handle;	/* CCI RMA handle */
 	} connect;
 
-	struct io_msg_ready {
-		io_msg_type_t type;	/* READY */
-	} ready;
-
 	struct io_msg_write_request {
 		io_msg_type_t type;	/* WRITE_REQ */
 		uint32_t len;		/* Length of write */
+		uint64_t cookie;	/* IO request opaque pointer */
 	} request;
 
 	struct io_msg_write_done {
 		io_msg_type_t type;	/* WRITE_DONE */
+		uint32_t pad;
+		uint64_t cookie;	/* IO request opaque pointer */
 	} done;
 
 	struct io_msg_write_bye {
