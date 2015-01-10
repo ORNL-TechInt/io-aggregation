@@ -63,7 +63,9 @@ int io_init(void *buffer, uint32_t len, uint32_t rank, uint32_t ranks)
 	ifd = open(hostname, O_WRONLY | O_CREAT | O_TRUNC | O_EXCL, 0600);
 	if (ifd != -1) {
 		ret = start_daemon();
-		goto out;
+		if (ret) {
+			goto out;
+		}
 	}
 
 	ret = cci_init(CCI_ABI_VERSION, 0, &caps);
