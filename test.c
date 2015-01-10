@@ -89,19 +89,19 @@ write_it(void *buf, size_t left)
 void *allocate_and_touch( size_t size)
 {
 	fprintf(stderr, "Allocating %ld MB of ram...", size / (1024*1024));
-	
-    void *mem = malloc( size);
-    
-    long pgsize = sysconf(_SC_PAGESIZE);
-    char *vals = (char *)mem;
-    size_t i = 0;
-    while (i < size) {
-        vals[i] = 'A'; /* just write something - doesn't matter what */
-        i+=pgsize;
-    }
-    
-    fprintf(stderr, "Done.\n");
-    return mem;
+
+	void *mem = malloc( size);
+
+	long pgsize = sysconf(_SC_PAGESIZE);
+	char *vals = (char *)mem;
+	size_t i = 0;
+	while (i < size) {
+		vals[i] = 'A'; /* just write something - doesn't matter what */
+		i+=pgsize;
+	}
+
+	fprintf(stderr, "Done.\n");
+	return mem;
 }
 
 
