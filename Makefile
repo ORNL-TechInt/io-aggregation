@@ -20,10 +20,10 @@ MPI_TARGETS = test
 
 ALL:$(OBJS) $(C_OBJS) $(MPI_OBJS) $(C_TARGETS) $(MPI_TARGETS)
 $(C_OBJS):%.o:%.c io.h
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
 $(MPI_OBJS):%.o:%.c io.h
-	$(MPICC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
+	$(MPICC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
 $(C_TARGETS):$(C_OBJS) $(OBJS)
 	$(CC) $(OBJS) $(C_OBJS) $(LDFLAGS) -o $@
