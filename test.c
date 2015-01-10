@@ -18,6 +18,7 @@
 #define MB		(1024*1024)	/* MB */
 #define MIN_LENGTH	(1 * MB)	/* 1 MB */
 #define MAX_LENGTH	(128 * MB)	/* 128 MB */
+#define EXTRA_RAM   0           /* in MB */
 
 int use_io_agg = 0;
 int fd = -1, rank = -1;
@@ -33,6 +34,7 @@ print_usage(char *name)
 	fprintf(stderr, "\t-m\tMinimun length (default %d)\n", MIN_LENGTH);
 	fprintf(stderr, "\t-M\tMaximum length (default %d)\n", MAX_LENGTH);
 	fprintf(stderr, "\t-a\tStart the IO aggregation daemon\n");
+    fprintf(stderr, "\t-r\tAllocate extra memory. In MB (default %d)\n", EXTRA_RAM);
 	exit(EXIT_FAILURE);
 }
 
@@ -81,6 +83,28 @@ write_it(void *buf, size_t left)
 	}
 }
 
+/* Allocate and then touch (to ensure the linux kernel has actually
+ * allocated the memory) 'size' bytes of ram.
+ */
+void *allocate_and_touch( size_t size)
+{
+	fprintf(stderr, "Allocating %ld MB of ram...", size / (1024*1024));
+	
+    void *mem = malloc( size);
+    
+    long pgsize = sysconf(_SC_PAGESIZE);
+    char *vals = (char *)mem;
+    size_t i = 0;
+    while (i < size) {
+        vals[i] = 'A'; /* just write something - doesn't matter what */
+        i+=pgsize;
+    }
+    
+    fprintf(stderr, "Done.\n");
+    return mem;
+}
+
+
 int main(int argc, char *argv[])
 {
 	int c = 0, iters = ITERS, secs = SLEEP_SECS;
@@ -89,8 +113,10 @@ int main(int argc, char *argv[])
 	char fname[32];
 	void *buf = NULL;
 	uint64_t *latencies = NULL;
+	int extra_ram_mb = EXTRA_RAM;
+	char *extra_ram = NULL;
 
-	while ((c = getopt(argc, argv, "i:s:m:M:a")) != -1) {
+	while ((c = getopt(argc, argv, "i:s:m:M:ar:")) != -1) {
 		switch (c) {
 		case 'i':
 			iters = strtol(optarg, NULL, 0);
@@ -107,6 +133,9 @@ int main(int argc, char *argv[])
 		case 'a':
 			use_io_agg = 1;
 			break;
+		case 'r':
+			extra_ram_mb =  strtol(optarg, NULL, 0);
+			break;
 		default:
 			print_usage(argv[0]);
 		}
@@ -114,6 +143,13 @@ int main(int argc, char *argv[])
 
 	if (max < len)
 		max = len;
+	
+	/* allocate a bunch of ram - just as if this was a real, useful program
+	 * rather than a microbenchmark.
+	 */
+	if (extra_ram_mb > 0) {
+		extra_ram = (char *)allocate_and_touch( extra_ram_mb * (size_t)(1024 * 1024));
+	}
 
 	/* determine how many sizes we will test given max and len.
 	 * reuse c to count the sizes. */
@@ -241,5 +277,7 @@ int main(int argc, char *argv[])
 
 	MPI_Finalize();
 
+	free( extra_ram);
+	
 	return 0;
 }
