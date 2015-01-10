@@ -175,6 +175,8 @@ handle_connect_request(cci_event_t *event)
 		goto out;
 	}
 
+	TAILQ_INIT(&p->ios);
+
 	memset(name, 0, sizeof(name));
 	snprintf(name, sizeof(name), "rank-%u", p->rank);
 
