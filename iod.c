@@ -92,7 +92,7 @@ io(void *arg)
 				fprintf(stderr, "%s: write() of %u bytes for rank %u "
 						" failed with %s\n", __func__,
 						io->len - offset, p->rank, strerror(errno));
-				assert(1);
+				assert(0);
 			}
 		} while (offset < io->len);
 
