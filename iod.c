@@ -13,7 +13,6 @@
 #include "io.h"
 
 cci_endpoint_t *ep = NULL;
-char *uri = NULL;
 int done = 0;
 
 struct io_req;
@@ -371,6 +370,7 @@ main(int argc, char *argv[])
 	int ret = 0, i = 0, fd = -1;
 	uint32_t caps = 0;
 	cci_device_t *const *devices, *device = NULL;
+	char *uri = NULL;
 	char hostname[64], name[128];
 	pthread_t tid;
 
