@@ -33,6 +33,8 @@ typedef struct peer {
 	uint32_t		rank;	/* Peer's MPI rank */
 	int			fd;	/* File for peer */
 	int			done;	/* client sent BYE message */
+
+	pthread_mutex_t		lock;	/* Lock to protect done */
 } peer_t;
 
 TAILQ_HEAD(ps, peer)		peers;
@@ -59,6 +61,13 @@ get_us(void)
 	gettimeofday(&tv, NULL);
 
 	return (uint64_t)(tv.tv_sec * 1000000) + (uint64_t)tv.tv_usec;
+}
+
+static void
+print_results(peer_t *p)
+{
+	/* TODO */
+	return;
 }
 
 static void *
@@ -100,6 +109,11 @@ io(void *arg)
 
 		TAILQ_INSERT_TAIL(&p->ios, io, entry);
 		p->completed++;
+
+		pthread_mutex_lock(&p->lock);
+		if (p->done && p->requests == p->completed)
+			print_results(p);
+		pthread_mutex_unlock(&p->lock);
 	}
 
 	pthread_exit(NULL);
@@ -180,6 +194,7 @@ handle_connect_request(cci_event_t *event)
 	}
 
 	TAILQ_INIT(&p->ios);
+	pthread_mutex_init(&p->lock, NULL);
 
 	memset(name, 0, sizeof(name));
 	snprintf(name, sizeof(name), "rank-%u", p->rank);
@@ -256,18 +271,13 @@ handle_write_req(cci_event_t *event)
 }
 
 static void
-print_results(peer_t *p)
-{
-	/* TODO */
-	return;
-}
-
-static void
 handle_bye(cci_event_t *event)
 {
 	peer_t *p = event->recv.connection->context;
 
+	pthread_mutex_lock(&p->lock);
 	p->done = 1;
+	pthread_mutex_unlock(&p->lock);
 
 	if (p->requests == p->completed)
 		print_results(p);
