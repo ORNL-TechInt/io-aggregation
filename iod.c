@@ -26,6 +26,7 @@ typedef struct peer {
 	cci_rma_handle_t	*remote; /* Their CCI RMA handle */
 
 	TAILQ_HEAD(done, io_req) ios;	/* List of completed io_reqs */
+	uint32_t		io_cnt;	/* Number of elements on ios list */
 
 	uint32_t		len;	/* RMA buffer length */
 	uint32_t		rank;	/* Peer's MPI rank */
@@ -96,6 +97,7 @@ io(void *arg)
 		io->io_us = get_us();
 
 		TAILQ_INSERT_TAIL(&p->ios, io, entry);
+		p->io_cnt++;
 	}
 
 	pthread_exit(NULL);
