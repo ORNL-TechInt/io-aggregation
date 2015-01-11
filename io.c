@@ -139,15 +139,15 @@ int io_init(void *buffer, uint32_t len, uint32_t rank, uint32_t ranks)
 			case CCI_EVENT_CONNECT:
 				connection = event->connect.connection;
 				ready++;
-				if (!event->connect.status)
-					ready = -1;
 				break;
 			default:
+				fprintf(stderr, "%s: ignoring %s\n", __func__,
+						cci_event_type_str(event->type));
 				break;
 			}
 			cci_return_event(event);
 		}
-	} while (ready == 0 || ready == 1);
+	} while (!ready);
 
 	if (!connection) {
 		ret = ENOTCONN;
