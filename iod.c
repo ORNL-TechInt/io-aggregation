@@ -518,6 +518,11 @@ main(int argc, char *argv[])
 
 	comm_loop();
 
+	ret = pthread_join(tid, NULL);
+	if (ret) {
+		fprintf(stderr, "pthread_join() failed with %s\n", strerror(ret));
+	}
+
     out:
 	free(uri);
 
