@@ -14,6 +14,9 @@
 
 cci_endpoint_t *ep = NULL;
 int done = 0;
+int connected_peers = 0;
+
+#define IOD_TX_FINI	((void*)((uintptr_t)0x1))
 
 struct io_req;
 
@@ -104,7 +107,7 @@ print_results(peer_t *p)
 
 	msg.fini.type = FINISHED;
 
-	ret = cci_send(p->conn, &msg, sizeof(msg.fini), NULL, CCI_FLAG_SILENT);
+	ret = cci_send(p->conn, &msg, sizeof(msg.fini), IOD_TX_FINI, 0);
 	if (ret) {
 		fprintf(stderr, "%s: failed to send FINISHED msg to rank %d\n",
 			__func__, p->rank);
@@ -240,6 +243,8 @@ handle_connect_request(cci_event_t *event)
 			__func__, p->rank, cci_strerror(ep, ret));
 	}
 
+	connected_peers++;
+
     out:
 	if (ret)
 		free_peer(p);
@@ -334,7 +339,7 @@ handle_recv(cci_event_t *event)
 }
 
 static void
-handle_send(cci_event_t *event)
+handle_rma(cci_event_t *event)
 {
 	io_req_t *io = event->send.context;
 
@@ -344,6 +349,31 @@ handle_send(cci_event_t *event)
 	TAILQ_INSERT_TAIL(&reqs, io, entry);
 	pthread_cond_signal(&cv);
 	pthread_mutex_unlock(&lock);
+
+}
+
+static void
+handle_fini(void)
+{
+	/* TODO */
+	connected_peers--;
+
+	if (connected_peers == 0)
+		done = 1;
+
+	return;
+}
+
+static void
+handle_send(cci_event_t *event)
+{
+	void *ctx = event->send.context;
+
+	if (ctx == IOD_TX_FINI) {
+		handle_fini();
+	} else {
+		handle_rma(event);
+	}
 
 	return;
 }
