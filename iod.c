@@ -63,9 +63,55 @@ get_us(void)
 }
 
 static void
+free_peer(peer_t *p)
+{
+	if (!p)
+		return;
+
+	if (p->fd > 0)
+		close(p->fd);
+
+	free((void*)p->remote);
+
+	if (p->local) {
+		int ret = 0;
+
+		ret = cci_rma_deregister(ep, p->local);
+		if (ret) {
+			fprintf(stderr, "%s: cci_rma_deregister() "
+				"for rank %u failed with %s\n", __func__,
+				p->rank, cci_strerror(ep, ret));
+		}
+	}
+
+	if (p->conn)
+		cci_disconnect(p->conn);
+
+	free(p->buffer);
+	free(p);
+
+	return;
+}
+
+static void
 print_results(peer_t *p)
 {
+	int ret = 0;
+	io_msg_t msg;
+
 	/* TODO */
+
+
+	msg.fini.type = FINISHED;
+
+	ret = cci_send(p->conn, &msg, sizeof(msg.fini), NULL, CCI_FLAG_SILENT);
+	if (ret) {
+		fprintf(stderr, "%s: failed to send FINISHED msg to rank %d\n",
+			__func__, p->rank);
+	}
+
+	free_peer(p);
+
 	return;
 }
 
@@ -110,36 +156,19 @@ io(void *arg)
 		p->completed++;
 
 		pthread_mutex_lock(&p->lock);
-		if (p->done && p->requests == p->completed)
-			print_results(p);
+		if (p->done) {
+			if (p->requests == p->completed) {
+				/* drop the lock, because print_results will
+				 * free the peer */
+				pthread_mutex_unlock(&p->lock);
+				print_results(p);
+				continue;
+			}
+		}
 		pthread_mutex_unlock(&p->lock);
 	}
 
 	pthread_exit(NULL);
-}
-
-static void
-free_peer(peer_t *p)
-{
-	if (!p)
-		return;
-
-	free((void*)p->remote);
-
-	if (p->local) {
-		int ret = 0;
-
-		ret = cci_rma_deregister(ep, p->local);
-		if (ret) {
-			fprintf(stderr, "%s: cci_rma_deregister() "
-				"for rank %u failed with %s\n", __func__,
-				p->rank, cci_strerror(ep, ret));
-		}
-	}
-	free(p->buffer);
-	free(p);
-
-	return;
 }
 
 static void
