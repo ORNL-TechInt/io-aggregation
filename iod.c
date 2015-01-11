@@ -25,12 +25,14 @@ typedef struct peer {
 	cci_rma_handle_t	*local;	/* Our CCI RMA handle */
 	cci_rma_handle_t	*remote; /* Their CCI RMA handle */
 
+	uint32_t		requests; /* Number of requests received */
+	uint32_t		completed; /* Number of completed requests on ios list */
 	TAILQ_HEAD(done, io_req) ios;	/* List of completed io_reqs */
-	uint32_t		io_cnt;	/* Number of elements on ios list */
 
 	uint32_t		len;	/* RMA buffer length */
 	uint32_t		rank;	/* Peer's MPI rank */
 	int			fd;	/* File for peer */
+	int			done;	/* client sent BYE message */
 } peer_t;
 
 TAILQ_HEAD(ps, peer)		peers;
@@ -97,7 +99,7 @@ io(void *arg)
 		io->io_us = get_us();
 
 		TAILQ_INSERT_TAIL(&p->ios, io, entry);
-		p->io_cnt++;
+		p->completed++;
 	}
 
 	pthread_exit(NULL);
@@ -236,6 +238,8 @@ handle_write_req(cci_event_t *event)
 		goto out;
 	}
 
+	p->requests++;
+
 	io->peer = p;
 	io->rx_us = get_us();
 	io->len = msg->request.len;
@@ -252,6 +256,26 @@ handle_write_req(cci_event_t *event)
 }
 
 static void
+print_results(peer_t *p)
+{
+	/* TODO */
+	return;
+}
+
+static void
+handle_bye(cci_event_t *event)
+{
+	peer_t *p = event->recv.connection->context;
+
+	p->done = 1;
+
+	if (p->requests == p->completed)
+		print_results(p);
+
+	return;
+}
+
+static void
 handle_recv(cci_event_t *event)
 {
 	io_msg_t *msg = (void*) event->recv.ptr;
@@ -261,11 +285,10 @@ handle_recv(cci_event_t *event)
 		handle_write_req(event);
 		break;
 	case BYE:
-		/* TODO */
-		assert(1);
+		handle_bye(event);
 		break;
 	default:
-		assert(1);
+		fprintf(stderr, "%s: ignoring %d event\n", __func__, msg->type);
 		break;
 	}
 
