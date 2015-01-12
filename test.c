@@ -17,8 +17,13 @@
 #define SLEEP_SECS	(60)		/* Number of seconds to sleep */
 #define MB		(1024*1024)	/* MB */
 #define MIN_LENGTH	(1 * MB)	/* 1 MB */
-#define MAX_LENGTH	(128 * MB)	/* 128 MB */
+#define MAX_LENGTH	(128 * MB)	/* 128 MB  Also the default RMA buffer size */
 #define EXTRA_RAM   0           /* in MB */
+
+
+uint64_t min( uint64_t a, uint64_t b) { return (a < b)?a:b; }
+uint64_t max( uint64_t a, uint64_t b) { return (a > b)?a:b; }
+
 
 int use_io_agg = 0;
 int fd = -1, rank = -1;
@@ -34,7 +39,9 @@ print_usage(char *name)
 	fprintf(stderr, "\t-m\tMinimun length (default %d)\n", MIN_LENGTH);
 	fprintf(stderr, "\t-M\tMaximum length (default %d)\n", MAX_LENGTH);
 	fprintf(stderr, "\t-a\tStart the IO aggregation daemon\n");
-    fprintf(stderr, "\t-r\tAllocate extra memory. In MB (default %d)\n", EXTRA_RAM);
+	fprintf(stderr, "\t-r\tSize of the RMA buffer (for aggregation). "
+	                "In MB (default %d)\n", MAX_LENGTH / (1024*1024));
+    fprintf(stderr, "\t-e\tAllocate extra memory. In MB (default %d)\n", EXTRA_RAM);
 	exit(EXIT_FAILURE);
 }
 
@@ -110,13 +117,15 @@ int main(int argc, char *argv[])
 	int c = 0, iters = ITERS, secs = SLEEP_SECS;
 	int rc = 0, ranks = 0, i = 0, j = 0;
 	size_t len = MIN_LENGTH, max = MAX_LENGTH, tmp = 0;
+	size_t rma_buf_size = MAX_LENGTH / (1024*1024);
 	char fname[32];
+	void *rma_buf = NULL;
 	void *buf = NULL;
 	uint64_t *latencies = NULL;
 	int extra_ram_mb = EXTRA_RAM;
 	char *extra_ram = NULL;
 
-	while ((c = getopt(argc, argv, "i:s:m:M:ar:")) != -1) {
+	while ((c = getopt(argc, argv, "i:s:m:M:ae:r:")) != -1) {
 		switch (c) {
 		case 'i':
 			iters = strtol(optarg, NULL, 0);
@@ -133,8 +142,13 @@ int main(int argc, char *argv[])
 		case 'a':
 			use_io_agg = 1;
 			break;
-		case 'r':
+		case 'e':
 			extra_ram_mb =  strtol(optarg, NULL, 0);
+			break;
+		case 'r':
+			rma_buf_size = strtol(optarg, NULL, 0);
+			/* convert the user value from MB to bytes */
+			rma_buf_size *= (1024 * 1024);
 			break;
 		default:
 			print_usage(argv[0]);
@@ -174,13 +188,19 @@ int main(int argc, char *argv[])
 	}
 
 	init_buffer(buf, max, rank);
+	
+	rma_buf = malloc(rma_buf_size);
+	if (!rma_buf) {
+		perror("malloc():");
+		exit(EXIT_FAILURE);
+	}
 
 	MPI_Init(&argc, &argv);
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
 	if (use_io_agg) {
-		rc = io_init(buf, max, rank, ranks);
+		rc = io_init(rma_buf, rma_buf_size, rank, ranks);
 		/* TODO handle error */
 		if (rc)
 			exit(EXIT_FAILURE);
@@ -207,7 +227,6 @@ int main(int argc, char *argv[])
 			fprintf(stderr, "Starting size %zu: ", len);
 
 		for (i = 0; i < iters; i++) {
-			size_t left = len;
 			struct timeval start, end;
 
 			init_buffer(buf, len, rank + i);
@@ -216,7 +235,16 @@ int main(int argc, char *argv[])
 			MPI_Barrier(MPI_COMM_WORLD);
 
 			gettimeofday(&start, NULL);
-			write_it(buf, left);
+			uint64_t bytes_sent = 0;
+			uint64_t bytes_remaining = len;
+			uint64_t bytes_to_send = 0;
+			do {
+				bytes_to_send = min(rma_buf_size, bytes_remaining);
+				memcpy( rma_buf, &((char *)buf)[bytes_sent], bytes_to_send);
+				write_it(rma_buf, bytes_to_send);
+				bytes_remaining -= bytes_to_send;
+				bytes_sent += bytes_to_send;
+			} while (bytes_remaining > 0);
 			gettimeofday(&end, NULL);
 
 			latencies[(j * iters) + i] = usecs(start, end);
