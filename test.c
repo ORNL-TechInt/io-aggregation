@@ -117,7 +117,7 @@ int main(int argc, char *argv[])
 	int c = 0, iters = ITERS, secs = SLEEP_SECS;
 	int rc = 0, ranks = 0, i = 0, j = 0;
 	size_t len = MIN_LENGTH, max = MAX_LENGTH, tmp = 0;
-	size_t rma_buf_size = MAX_LENGTH / (1024*1024);
+	size_t rma_buf_size = MAX_LENGTH;
 	char fname[32];
 	void *rma_buf = NULL;
 	void *buf = NULL;
