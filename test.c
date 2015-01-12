@@ -118,7 +118,7 @@ int main(int argc, char *argv[])
 	int extra_ram_mb = EXTRA_RAM;
 	char *extra_ram = NULL;
 
-	while ((c = getopt(argc, argv, "i:s:m:M:a:")) != -1) {
+	while ((c = getopt(argc, argv, "i:s:m:M:a")) != -1) {
 		switch (c) {
 		case 'i':
 			iters = strtol(optarg, NULL, 0);
