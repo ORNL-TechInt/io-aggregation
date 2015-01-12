@@ -101,9 +101,67 @@ print_results(peer_t *p)
 {
 	int ret = 0;
 	io_msg_t msg;
+	char *buf = NULL;
+	size_t len = p->completed * 4 * 32, offset = 0, newlen = 0;
 
-	/* TODO */
+	ftruncate(p->fd, 0);
+	lseek(p->fd, 0, SEEK_SET);
 
+	/* allocate buffer - reserve for 4 uint64_t (which use a max of 20 chars)
+	 * for each completed IO request.
+	 */
+	len = p->completed * 4 * 32;
+
+	buf = calloc(1, len);
+	if (!buf) {
+		fprintf(stderr, "%s: unable to allocate buffer for rank-%d\n",
+			__func__, p->rank);
+		return;
+	}
+
+	snprintf(buf, len, "iod\nrank %u num_requests %u max_len %u\n",
+			p->rank, p->completed, p->len);
+	newlen = strlen(buf);
+	do {
+		ret = write(p->fd, (void*)((uintptr_t)buf + offset), newlen - offset);
+		if (ret > 0) {
+			offset += ret;
+		} else {
+			fprintf(stderr, "%s: write() failed with %s\n",
+				__func__, strerror(errno));
+		}
+	} while (offset < newlen);
+
+	while (!TAILQ_EMPTY(&p->ios)) {
+		io_req_t *io = NULL;
+
+		io = TAILQ_FIRST(&p->ios);
+		TAILQ_REMOVE(&p->ios, io, entry);
+
+		memset(buf, 0, len);
+
+		snprintf(buf, len, "len %u rx_us %"PRIu64" rma_us %"PRIu64" "
+			"deq_us %"PRIu64" io_us %"PRIu64" ", io->len,
+			io->rx_us, io->rma_us, io->deq_us, io->io_us);
+
+		newlen = strlen(buf);
+		offset = 0;
+
+		do {
+			ret = write(p->fd, (void*)((uintptr_t)buf + offset), newlen - offset);
+			if (ret > 0) {
+				offset += ret;
+			} else {
+				fprintf(stderr, "%s: write() failed with %s\n",
+					__func__, strerror(errno));
+			}
+		} while (offset < newlen);
+
+		ret = write(p->fd, "\n", 1);
+		if (ret != 1)
+			fprintf(stderr, "%s: write() failed with %s\n",
+				__func__, strerror(errno));
+	}
 
 	msg.fini.type = FINISHED;
 
