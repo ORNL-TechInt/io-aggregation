@@ -11,7 +11,7 @@ endif
 
 CC = gcc
 CFLAGS = -g -O0 -std=c99 -D_XOPEN_SOURCE=600 -Wall -pedantic -I$(CCI)/include -fPIC
-LDFLAGS = -dynamic -L$(CCI)/lib -lcci -lpthread
+LDFLAGS = -dynamic -L$(CCI)/lib -lcci -lpthread -Wl,-rpath,$(CCI)/lib
 OBJS = io.o
 
 C_OBJS = iod.o
