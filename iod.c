@@ -526,10 +526,12 @@ main(int argc, char *argv[])
     out:
 	free(uri);
 
-	ret = cci_destroy_endpoint(ep);
-	if (ret) {
-		fprintf(stderr, "cci_destroy_endpoint() failed with %s\n",
-				cci_strerror(NULL, ret));
+	if (ep) {
+		ret = cci_destroy_endpoint(ep);
+		if (ret) {
+			fprintf(stderr, "cci_destroy_endpoint() failed with %s\n",
+					cci_strerror(NULL, ret));
+		}
 	}
 
 	ret = cci_finalize();
