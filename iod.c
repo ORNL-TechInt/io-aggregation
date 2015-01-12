@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -8,6 +9,9 @@
 #include <sys/queue.h>
 #include <assert.h>
 #include <inttypes.h>
+#ifdef __linux__
+#include <sched.h>
+#endif
 
 #include "cci.h"
 #include "io.h"
@@ -176,6 +180,25 @@ print_results(peer_t *p)
 	return;
 }
 
+static void
+pin_to_core(int core)
+{
+#ifdef __linux__
+	int ret = 0;
+	cpu_set_t cpuset;
+
+	CPU_ZERO(&cpuset);
+	CPU_SET(core, &cpu_set);
+
+	ret = sched_setaffinity(getpid(), sizeof(cpu_set_t), &cpuset);
+	if (ret) {
+		fpinrtf(stderr, "%s: sched_setaffinity() failed with %s\n",
+			__func__, strerror(errno));
+	}
+#endif
+	return;
+}
+
 static void *
 io(void *arg)
 {
@@ -183,6 +206,8 @@ io(void *arg)
 		io_req_t *io = NULL;
 		peer_t *p = NULL;
 		uint32_t offset = 0;
+
+		pin_to_core(3);
 
 		pthread_mutex_lock(&lock);
 		if (TAILQ_EMPTY(&reqs)) {
@@ -567,6 +592,8 @@ main(int argc, char *argv[])
 	}
 
 	close(fd);
+
+	pin_to_core(1);
 
 	TAILQ_INIT(&reqs);
 	pthread_cond_init(&cv, NULL);
