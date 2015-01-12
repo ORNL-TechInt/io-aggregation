@@ -2,19 +2,21 @@ ifndef CCI
 $(error Export path to CCI in variable named CCI)
 endif
 
+ifndef MPICC
 ifndef MPI
 $(error Export path to MPI in variable named MPI)
 endif
+MPICC = $(MPI)/bin/mpicc
+endif
 
 CC = gcc
-CFLAGS = -g -O0 -std=c99 -D_XOPEN_SOURCE=600 -Wall -pedantic -I$(CCI)/include
-LDFLAGS = -L$(CCI)/lib -lcci -lpthread
+CFLAGS = -g -O0 -std=c99 -D_XOPEN_SOURCE=600 -Wall -pedantic -I$(CCI)/include -fPIC
+LDFLAGS = -dynamic -L$(CCI)/lib -lcci -lpthread
 OBJS = io.o
 
 C_OBJS = iod.o
 C_TARGETS = iod
 
-MPICC = $(MPI)/bin/mpicc
 MPI_OBJS = test.o
 MPI_TARGETS = test
 
