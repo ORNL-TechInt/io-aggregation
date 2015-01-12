@@ -41,10 +41,9 @@ print_usage(char *name)
 }
 
 static uint64_t
-usecs(struct timeval start, struct timeval end)
+tv_to_usecs(struct timeval tv)
 {
-	return (uint64_t)(end.tv_sec - start.tv_sec) * (uint64_t)1000000 +
-		(uint64_t)(end.tv_usec - start.tv_usec);
+	return (uint64_t)tv.tv_sec * (uint64_t)1000000 + (uint64_t)tv.tv_usec;
 }
 
 static void
@@ -160,7 +159,8 @@ int main(int argc, char *argv[])
 		tmp = tmp >> 1;
 	} while (tmp >= len);
 
-	latencies = calloc(c*iters, sizeof(*latencies));
+	/* we will store start and end timestamps for each iteration for each size */
+	latencies = calloc(2 * c*iters, sizeof(*latencies));
 	if (!latencies) {
 		perror("calloc():");
 		exit(EXIT_FAILURE);
@@ -204,7 +204,7 @@ int main(int argc, char *argv[])
 		if (rank == 0)
 			fprintf(stderr, "Starting size %zu: ", len);
 
-		for (i = 0; i < iters; i++) {
+		for (i = 0; i < 2 * iters; i += 2) {
 			size_t left = len;
 			struct timeval start, end;
 
@@ -217,7 +217,8 @@ int main(int argc, char *argv[])
 			write_it(buf, left, 0);
 			gettimeofday(&end, NULL);
 
-			latencies[(j * iters) + i] = usecs(start, end);
+			latencies[(j * iters) + i] = tv_to_usecs(start);
+			latencies[(j * iters) + i + 1] = tv_to_usecs(end);
 
 			if (rank == 0)
 				fprintf(stderr, "%d ", i);
@@ -243,19 +244,14 @@ int main(int argc, char *argv[])
 	for (j = 0; len <= max; j++) {
 		char line[64];
 
-		memset(line, 0, sizeof(line));
-		snprintf(line, sizeof(line), "size: %10zu iters: %d latencies: ", len, iters);
-		write_it(line, strlen(line), 1);
-
-		for (i = 0; i < iters; i++) {
+		for (i = 0; i < 2 * iters; i += 2) {
 			memset(line, 0, sizeof(line));
-			snprintf(line, sizeof(line), "%"PRIu64" ", latencies[(j * iters) + i]);
+			snprintf(line, sizeof(line), "len %zu start %"PRIu64" "
+					"end %"PRIu64"\n", len,
+					latencies[(j * iters) + i],
+					latencies[(j * iters) + i + 1]);
 			write_it(line, strlen(line), 1);
 		}
-
-		memset(line, 0, sizeof(line));
-		snprintf(line, sizeof(line), "\n");
-		write_it(line, strlen(line), 1);
 
 		len = len * (size_t)2;
 	}
