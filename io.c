@@ -132,9 +132,6 @@ int io_init(void *buffer, uint32_t len, uint32_t rank, uint32_t ranks)
 
 		ret = cci_get_event(endpoint, &event);
 		if (!ret) {
-			fprintf(stderr, "%s: %s completed\n", __func__,
-					cci_event_type_str(event->type));
-
 			switch (event->type) {
 			case CCI_EVENT_CONNECT:
 				connection = event->connect.connection;
@@ -217,10 +214,6 @@ int io_write(uint32_t len)
 			default:
 				break;
 			}
-			fprintf(stderr, "%s: %s completed\n",
-					__func__,
-					cci_event_type_str(event->type));
-
 			cci_return_event(event);
 			done++;
 		}
@@ -264,10 +257,6 @@ int io_finalize(void)
 					default:
 						break;
 					}
-					fprintf(stderr, "%s: %s completed\n",
-							__func__,
-							cci_event_type_str(event->type));
-
 					cci_return_event(event);
 					done++;
 				}
