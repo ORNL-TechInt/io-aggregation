@@ -113,7 +113,7 @@ int main(int argc, char *argv[])
 	size_t len = MIN_LENGTH, max = MAX_LENGTH, tmp = 0;
 	char fname[32];
 	void *buf = NULL;
-	uint64_t *latencies = NULL;
+	uint64_t *timestamps = NULL;
 	int extra_ram_mb = EXTRA_RAM;
 	char *extra_ram = NULL;
 
@@ -160,8 +160,8 @@ int main(int argc, char *argv[])
 	} while (tmp >= len);
 
 	/* we will store start and end timestamps for each iteration for each size */
-	latencies = calloc(2 * c*iters, sizeof(*latencies));
-	if (!latencies) {
+	timestamps = calloc(2 * c*iters, sizeof(*timestamps));
+	if (!timestamps) {
 		perror("calloc():");
 		exit(EXIT_FAILURE);
 	}
@@ -217,8 +217,8 @@ int main(int argc, char *argv[])
 			write_it(buf, left, 0);
 			gettimeofday(&end, NULL);
 
-			latencies[(j * iters) + i] = tv_to_usecs(start);
-			latencies[(j * iters) + i + 1] = tv_to_usecs(end);
+			timestamps[(j * iters) + i] = tv_to_usecs(start);
+			timestamps[(j * iters) + i + 1] = tv_to_usecs(end);
 
 			if (rank == 0)
 				fprintf(stderr, "%d ", i);
@@ -248,8 +248,8 @@ int main(int argc, char *argv[])
 			memset(line, 0, sizeof(line));
 			snprintf(line, sizeof(line), "len %zu start %"PRIu64" "
 					"end %"PRIu64"\n", len,
-					latencies[(j * iters) + i],
-					latencies[(j * iters) + i + 1]);
+					timestamps[(j * iters) + i],
+					timestamps[(j * iters) + i + 1]);
 			write_it(line, strlen(line), 1);
 		}
 
