@@ -188,11 +188,11 @@ pin_to_core(int core)
 	cpu_set_t cpuset;
 
 	CPU_ZERO(&cpuset);
-	CPU_SET(core, &cpu_set);
+	CPU_SET(core, &cpuset);
 
 	ret = sched_setaffinity(getpid(), sizeof(cpu_set_t), &cpuset);
 	if (ret) {
-		fpinrtf(stderr, "%s: sched_setaffinity() failed with %s\n",
+		fprintf(stderr, "%s: sched_setaffinity() failed with %s\n",
 			__func__, strerror(errno));
 	}
 #endif
