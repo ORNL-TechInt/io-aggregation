@@ -152,6 +152,9 @@ int io_init(void *buffer, uint32_t len, uint32_t rank, uint32_t ranks)
 	}
 
     out:
+	if (fd_iod != -1)
+		close(fd_iod);
+
 	if (ret)
 		io_finalize();
 	return ret;
@@ -230,6 +233,7 @@ int io_finalize(void)
 {
 	int ret = 0;
 	io_msg_t msg;
+	char hostname[256];
 
 	msg.type = BYE;
 
@@ -300,6 +304,11 @@ int io_finalize(void)
 	if (ifd != -1) {
 		close(ifd);
 	}
+
+	memset(hostname, 0, sizeof(hostname));
+	gethostname(hostname, sizeof(hostname));
+
+	unlink(hostname);
 
 	return ret;
 }

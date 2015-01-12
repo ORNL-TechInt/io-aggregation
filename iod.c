@@ -228,7 +228,7 @@ handle_connect_request(cci_event_t *event)
 	pthread_mutex_init(&p->lock, NULL);
 
 	memset(name, 0, sizeof(name));
-	snprintf(name, sizeof(name), "rank-%u", p->rank);
+	snprintf(name, sizeof(name), "rank-%u-iod", p->rank);
 
 	p->fd = open(name, O_RDWR|O_CREAT, 0644);
 	if (p->fd == -1) {
@@ -517,6 +517,11 @@ main(int argc, char *argv[])
 	}
 
 	comm_loop();
+
+	ret = unlink(name);
+	if (ret) {
+		perror("unlink()");
+	}
 
 	ret = pthread_join(tid, NULL);
 	if (ret) {
