@@ -356,6 +356,10 @@ handle_write_req(cci_event_t *event)
 
 	ret = cci_rma(p->conn, &reply, sizeof(reply.done), p->local, 0, p->remote, 0,
 			io->len, io, CCI_FLAG_READ);
+	if (ret) {
+		fprintf(stderr, "%s: cci_rma() failed with %s\n",
+				__func__, cci_strerror(ep, ret));
+	}
 
     out:
 	return;
