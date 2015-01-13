@@ -79,8 +79,12 @@ typedef struct cache_block {
 							 * pointer to GPU memory! */
 } cache_block_t;
 TAILQ_HEAD(cbq, cache_block)	cache_blocks;
-pthread_mutex_t					cache_lock;
+pthread_mutex_t					cache_lock; /* protects both the TAILQ *and* cache_size */
 sem_t							cache_sem;
+uint64_t						cache_size; /* keep track of how much memory
+                                             * we've allocated to cache */
+#define MAX_CACHE_SIZE			(2L * 1024 * 1024 * 1024) /* 2GB */
+/* TODO: This needs to be a command line parameter! */
 
 
 uint64_t min64( uint64_t a, uint64_t b) { return (a < b)?a:b; }
@@ -244,7 +248,7 @@ cache memory!
 		peer_t *p = NULL;
 		uint32_t offset = 0;
 		
-		pin_to_core(3);
+		pin_to_core(5);
 
 		pthread_mutex_lock(&lock);
 		if (TAILQ_EMPTY(&reqs)) {
@@ -319,7 +323,7 @@ rma_and_cache(io_req_t *io)
 	while (io->offset < io->len) { /* while there's still data to be RMA'd... */
 		/* if this is the last RMA for this request, then send back the completion
 		* message */
-		if (io->len - io->offset > p->len) {
+		if ((io->len - io->offset) <= p->len) {
 			memset(&reply, 0, sizeof(reply.done));
 			reply.done.type = WRITE_DONE;
 			reply.done.cookie = io->msg->request.cookie;
@@ -339,6 +343,7 @@ rma_and_cache(io_req_t *io)
 		/* The main thread will signal us when it gets the SEND event that indicates
 		* the RMA completed. */
 		
+		pthread_mutex_unlock( &p->lock);
 		
 		/* Set up the cache block */
 		cache_block_t *cb = (cache_block_t *)malloc( sizeof (*cb));
@@ -358,6 +363,20 @@ rma_and_cache(io_req_t *io)
 			cb->io_req = NULL;
 		}
 		
+		/* Make sure we have mem available to allocate for cache */
+		pthread_mutex_lock( &cache_lock);
+		if( (cache_size + data_len) > MAX_CACHE_SIZE) {
+			fprintf(stderr, "Cache mem full! Waiting for IO thread to drain it.\n");
+		}
+		while ( (cache_size + data_len) > MAX_CACHE_SIZE) {
+			/* Block until the IO thread frees up some cache */
+			pthread_mutex_unlock( &cache_lock);
+			usleep( 5 * 1000 ); /* 5 ms - at 700MB/s it takes 5.7 ms to write a
+			                     * a 4MB block... */
+			pthread_mutex_lock( &cache_lock);
+		}
+		pthread_mutex_unlock( &cache_lock);
+		
 		/* TODO: This malloc (and its corresponding free() ) are pretty inefficient.
 		 * Better to implement some kind of block pool that we can allocate once
 		 * and then use blocks from */
@@ -371,12 +390,18 @@ rma_and_cache(io_req_t *io)
 			goto out;
 		}
 		
+		pthread_mutex_lock( &cache_lock);
+		cache_size += data_len;
+		pthread_mutex_unlock( &cache_lock);
+		
 		memcpy( cb->cache, p->buffer, data_len);
 
 		pthread_mutex_lock( &cache_lock);
 		TAILQ_INSERT_TAIL(&cache_blocks, cb, entry);
 		pthread_mutex_unlock( &cache_lock);
 		sem_post( &cache_sem);  /* wake up the cache thread */
+		
+		io->offset += data_len;
 	}
 
 	io->rma_us = get_us();
@@ -391,7 +416,7 @@ cache_thread(void *arg)
 {
 	io_req_t *io_req = NULL;
 	
-	pin_to_core(5);
+	pin_to_core(3);
 	
 	while (!done) {
 		
@@ -685,7 +710,7 @@ main(int argc, char *argv[])
 	char *uri = NULL;
 	char hostname[64], name[128];
 	pthread_t io_tid, cache_tid;
-
+	
 	ret = cci_init(CCI_ABI_VERSION, 0, &caps);
 	if (ret) {
 		fprintf(stderr, "cci_init() failed with %s\n",
@@ -780,6 +805,14 @@ main(int argc, char *argv[])
 		fprintf(stderr, "pthread_create() failed with %s\n", strerror(ret));
 		goto out;
 	}
+	
+#if 0
+	/* wait for debugger to attach */
+	int dbg_wait = 1;
+	while (dbg_wait) {
+		usleep( 100);
+	}
+#endif
 	
 	comm_loop();
 
