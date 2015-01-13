@@ -177,8 +177,6 @@ print_results(peer_t *p)
 			__func__, p->rank);
 	}
 
-	free_peer(p);
-
 	return;
 }
 
@@ -447,10 +445,13 @@ handle_rma(cci_event_t *event)
 }
 
 static void
-handle_fini(void)
+handle_fini(cci_event_t *event)
 {
-	/* TODO */
+	free_peer(event->send.connection->context);
+
 	connected_peers--;
+
+	fprintf(stderr, "%s: connected_peers=%d\n", __func__, connected_peers);
 
 	if (connected_peers == 0)
 		done = 1;
@@ -464,7 +465,7 @@ handle_send(cci_event_t *event)
 	void *ctx = event->send.context;
 
 	if (ctx == IOD_TX_FINI) {
-		handle_fini();
+		handle_fini(event);
 	} else {
 		handle_rma(event);
 	}

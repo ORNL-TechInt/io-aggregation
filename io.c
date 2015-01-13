@@ -25,7 +25,7 @@ static int
 start_daemon(char **args)
 {
 	int ret = 0;
-	
+
 	pid = fork();
 	if (pid == -1) {
 		ret = errno;
@@ -242,7 +242,7 @@ int io_finalize(void)
 		ret = cci_send(connection, &msg, sizeof(msg.bye),
 				(void*)(uintptr_t)0xdeadbeef, 0);
 		if (!ret) {
-			int done = 0;
+			int done = 0, i = 0;
 			cci_event_t *event = NULL;
 
 			do {
@@ -266,6 +266,11 @@ int io_finalize(void)
 					done++;
 				}
 			} while (done < 2);
+
+			/* to allow CCI to ack the send? */
+			for (i = 0; i < 10; i++)
+				cci_get_event(endpoint, &event);
+
 		}
 
 		ret = cci_disconnect(connection);
