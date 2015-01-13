@@ -39,13 +39,14 @@ typedef struct peer {
 	TAILQ_HEAD(done, io_req) ios;	/* List of completed io_reqs */
 
 	uint32_t		len;	/* RMA buffer length */
+	uint32_t		buff_used; /* number of bytes in buffer that contain valid
+	                            * data (may be <= len)  Not valid if an RMA
+	                            * is in progress! */
 	uint32_t		rank;	/* Peer's MPI rank */
 	int			fd;	/* File for peer */
 	int			done;	/* client sent BYE message */
 
 	pthread_mutex_t		lock;	/* Lock to protect buffer, buffer_in_use & done */
-	pthread_cond_t		cv;		/* Condition variable to wait on the RMA to finish
-                                 * writing to buffer */
 } peer_t;
 
 TAILQ_HEAD(ps, peer)		peers;
@@ -60,12 +61,14 @@ typedef struct io_req {
 	uint64_t		deq_us;	/* microsecs when dequeued by io */
 	uint64_t		io_us;	/* microsecs when write() completes */
 	uint32_t		len;	/* Requesting write of len bytes */
-	uint32_t		offset;	/* how may bytes we've written so far */
+	uint32_t		offset;	/* how may bytes we've RMA'd so far */
 } io_req_t;
 
 TAILQ_HEAD(irq, io_req)		reqs;	/* List of io_reqs */
+uint32_t				reqs_len;	/* number of entries in the queue */
 sem_t					reqs_sem;  /* Semaphore for the reqs TAILQ */
-pthread_mutex_t			reqs_lock;	/* To protect reqs and cv */
+pthread_mutex_t			reqs_lock;	/* To protect reqs and reqs_len */
+#define MAX_REQS_LEN	100		/* we'll want to play with this number a bit */
 
 
 /* Struct for keeping track of cached data */
@@ -73,7 +76,8 @@ typedef struct cache_block {
 	TAILQ_ENTRY(cache_block)	entry;
 	peer_t			*peer;	/* client peer */
 	io_req_t		*io_req; /* only valid if this is the last cache block for the request */
-	uint64_t		offset; /* offset into the file where we should start writing */
+	uint64_t		offset; /* offset into the file where we should start writing.
+                             * This is the same as the offset from the start of the request. */
 	/* TODO: I don't think we need this offset value */
 	uint64_t		len;	/* how much data to write */
 	void			*cache;	/* pointer to the cached data. */
@@ -339,32 +343,20 @@ rma_and_cache(io_req_t *io)
 	io_msg_t reply; /* delcared on the stack so I don't have to malloc it */
 	io_msg_t *reply_ptr = NULL;
 	uint32_t reply_size = 0;
-	uint64_t data_len;  /* amount of data to be transferred in a single RMA */
 
-	while (io->offset < io->len) { /* while there's still data to be RMA'd... */
-		/* if this is the last RMA for this request, then send back the completion
-		* message */
-		if ((io->len - io->offset) <= p->len) {
-			memset(&reply, 0, sizeof(reply.done));
-			reply.done.type = WRITE_DONE;
-			reply.done.cookie = io->msg->request.cookie;
-			reply_ptr = &reply;
-			reply_size = sizeof( reply.done);
-		}
 
-		data_len = min64( (io->len - io->offset), p->len);
-		pthread_mutex_lock( &p->lock);
-		ret = cci_rma(p->conn, reply_ptr, reply_size, p->local, 0, p->remote, io->offset,
-				data_len, io, CCI_FLAG_READ);
-		if (ret) {
-			fprintf(stderr, "%s: cci_rma() failed with %s\n",
-					__func__, cci_strerror(ep, ret));
+	if (io->offset == io->len) {
+		io->rma_us = get_us();
+		/* rma_us is the time when the last RMA completes.  If the offset
+		 * equals the length, we've RMA'd everything. */
 		}
-		pthread_cond_wait( &p->cv, &p->lock);
-		/* The main thread will signal us when it gets the SEND event that indicates
-		* the RMA completed. */
 		
-		pthread_mutex_unlock( &p->lock);
+	/* If there's data in the peer's buffer, we need to move
+	 * that to cache before we can initiate another RMA */
+	if (io->offset > 0) { 
+		/* io->offset is the number of bytes that have been RMA'd so far.  If it's 0,
+		 * then nothing's been RMA'd and the buffer is empty.  If it's > 0, then
+		 * copy to cache. */
 		
 		/* Set up the cache block */
 		cache_block_t *cb = (cache_block_t *)malloc( sizeof (*cb));
@@ -375,26 +367,27 @@ rma_and_cache(io_req_t *io)
 			goto out;
 		}
 		cb->peer = p;
-		cb->offset = io->offset;
-		cb->len = data_len;
+		cb->offset = io->offset - p->buff_used;
+		cb->len = p->buff_used;
 		
-		if (reply_ptr) { /* Did we just do the last RMA for this request? */
-			cb->io_req = io;
+		if (io->offset == io->len) { /* Did we just do the last RMA for this request? */
+			cb->io_req = io;  /* only the last cache block needs to know about the request */
 		} else {
 			cb->io_req = NULL;
 		}
 		
 		/* Make sure we have mem available to allocate for cache */
 		pthread_mutex_lock( &cache_lock);
-		if( (cache_size + data_len) > MAX_CACHE_SIZE) {
+		if( (cache_size + cb->len) > MAX_CACHE_SIZE) {
 			fprintf(stderr, "Cache mem full! Waiting for IO thread to drain it.\n");
-		}
-		while ( (cache_size + data_len) > MAX_CACHE_SIZE) {
+		
+			while ( (cache_size + cb->len) > MAX_CACHE_SIZE) {
 			/* Block until the IO thread frees up some cache */
 			pthread_mutex_unlock( &cache_lock);
 			usleep( 5 * 1000 ); /* 5 ms - at 700MB/s it takes 5.7 ms to write a
 			                     * a 4MB block... */
 			pthread_mutex_lock( &cache_lock);
+		}
 		}
 		pthread_mutex_unlock( &cache_lock);
 		
@@ -402,8 +395,8 @@ rma_and_cache(io_req_t *io)
 		 * Better to implement some kind of block pool that we can allocate once
 		 * and then use blocks from */
 		/* TODO: For the GPU implementation, we'd use CUDAMalloc() here, and 
-		 * CUDAMemCpy() down below. */
-		cb->cache = malloc( data_len);
+		 * CUDAMemCpy() down below.   Can probably use "#ifdef __CUDACC__"*/
+		cb->cache = malloc( cb->len);
 		if (!cb->cache) {
 			fprintf(stderr, "%s: unable to allocate mem for cached data for rank %u\n",
 					__func__, p->rank);
@@ -411,21 +404,42 @@ rma_and_cache(io_req_t *io)
 			goto out;
 		}
 		
-		pthread_mutex_lock( &cache_lock);
-		cache_size += data_len;
-		pthread_mutex_unlock( &cache_lock);
-		
-		memcpy( cb->cache, p->buffer, data_len);
+		memcpy( cb->cache, p->buffer, cb->len);
 
 		pthread_mutex_lock( &cache_lock);
+		cache_size += cb->len;
 		TAILQ_INSERT_TAIL(&cache_blocks, cb, entry);
 		pthread_mutex_unlock( &cache_lock);
 		sem_post( &cache_sem);  /* wake up the cache thread */
+	}
 		
-		io->offset += data_len;
+	/* Done with copying to cache.  Do we need to issue another RMA? */
+	if (io->offset < io->len) { 
+		/* if this is the last RMA for this request, then send back the completion
+		* message */
+		if ((io->len - io->offset) <= p->len) {
+			memset(&reply, 0, sizeof(reply.done));
+			reply.done.type = WRITE_DONE;
+			reply.done.cookie = io->msg->request.cookie;
+			reply_ptr = &reply;
+			reply_size = sizeof( reply.done);
 	}
 
-	io->rma_us = get_us();
+		p->buff_used = min64( (io->len - io->offset), p->len);
+		
+		/* We include the io_req struct as the context for the RMA, and we
+		 * want its offset value to reflect the amount of data that's been RMA'd
+		 * after the RMA we're about to issue completes.  */
+		uint32_t rma_start_offset = io->offset;
+		io->offset += p->buff_used;
+		
+		ret = cci_rma(p->conn, reply_ptr, reply_size, p->local, 0, p->remote,
+				rma_start_offset, p->buff_used, io, CCI_FLAG_READ);
+		if (ret) {
+			fprintf(stderr, "%s: cci_rma() failed with %s\n",
+					__func__, cci_strerror(ep, ret));
+		}
+	}
 	
 	out:
 	return;
@@ -594,8 +608,21 @@ handle_write_req(cci_event_t *event)
 	io->offset = 0;
 	
 	pthread_mutex_lock(&reqs_lock);
-	/* TODO: verify that this TAILQ isn't getting too large! */
+	/* Make sure the request queue doesn't grow too large */
+	if (reqs_len >= MAX_REQS_LEN) {
+		fprintf(stderr, "%s: Cannot add request to queue. (Queue is at max size.) "
+		        "Waiting for caching thread to catch up.\n", __func__);
+		
+		while (reqs_len >= MAX_REQS_LEN) {
+			pthread_mutex_unlock(&reqs_lock);
+			usleep( 1);	/* this is damn close to a spinlock, but I need to
+						 * the caching thread a chance to acquire the lock */
+			pthread_mutex_lock(&reqs_lock);
+		}
+	}
+	
 	TAILQ_INSERT_TAIL(&reqs, io, entry);
+	reqs_len++;
 	sem_post( &reqs_sem);
 	pthread_mutex_unlock(&reqs_lock);
 	
@@ -662,16 +689,26 @@ handle_send(cci_event_t *event)
 		/* ths event means a cci_rma() call has completed and we need
 		 * to signal the caching thread that it can do its memcpy */
 		io_req_t *io = event->send.context;
-		/* The caching thread will lock the mutex before initiaing the RMA
-		 * request and will not unlock it until it's waiting on the CV.
-		 * Therefore, if we can acquire the lock, we know the caching thread
-		 * must be waiting on the cv. */
-		pthread_mutex_lock(&io->peer->lock);
-		pthread_cond_signal(&io->peer->cv);
-		pthread_mutex_unlock(&io->peer->lock);
-		/* NOTE: Would it be better to unlock *before* signalling the cv?
-		 * That way, when the caching thread wakes, it can immediately acquire
-		 * the lock, rather than waking and then sleeping on the mutex lock...*/
+		
+		
+		pthread_mutex_lock(&reqs_lock);
+		/* Make sure the request queue doesn't grow too large */
+		if (reqs_len >= MAX_REQS_LEN) {
+			fprintf(stderr, "%s: Cannot add request to queue. (Queue is at max size.) "
+					"Waiting for caching thread to catch up.\n", __func__);
+			
+			while (reqs_len >= MAX_REQS_LEN) {
+				pthread_mutex_unlock(&reqs_lock);
+				usleep( 1);	/* this is damn close to a spinlock, but I need to
+							* the caching thread a chance to acquire the lock */
+				pthread_mutex_lock(&reqs_lock);
+			}
+		}
+		
+		TAILQ_INSERT_TAIL(&reqs, io, entry);
+		reqs_len++;
+		sem_post( &reqs_sem);
+		pthread_mutex_unlock(&reqs_lock);
 	}
 
 	return;
@@ -731,6 +768,19 @@ main(int argc, char *argv[])
 	char *uri = NULL;
 	char hostname[64], name[128];
 	pthread_t io_tid, cache_tid;
+	
+#if 1
+	char *dbg_env = getenv( "WAIT_ON_GDB");
+	if (dbg_env && *dbg_env) {
+		/* wait for debugger to attach */
+		int dbg_wait = 1;
+		while (dbg_wait) {
+			usleep( 100);
+		}
+	}
+#endif
+	
+	
 	
 	ret = cci_init(CCI_ABI_VERSION, 0, &caps);
 	if (ret) {
@@ -808,6 +858,7 @@ main(int argc, char *argv[])
 	pin_to_core(1);
 
 	TAILQ_INIT(&reqs);
+	reqs_len = 0;
 	sem_init( &reqs_sem, 0, 0);
 	pthread_mutex_init(&reqs_lock, NULL);
 
@@ -815,14 +866,6 @@ main(int argc, char *argv[])
 	sem_init( &cache_sem, 0, 0);
 	pthread_mutex_init( &cache_lock, NULL);
 
-#if 0
-	/* wait for debugger to attach */
-	int dbg_wait = 1;
-	while (dbg_wait) {
-		usleep( 100);
-	}
-#endif
-	
 	ret = pthread_create(&io_tid, NULL, io, NULL);
 	if (ret) {
 		fprintf(stderr, "pthread_create() failed with %s\n", strerror(ret));
