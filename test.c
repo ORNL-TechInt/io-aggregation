@@ -245,8 +245,8 @@ int main(int argc, char *argv[])
 			write_it(buf, left, 0);
 			gettimeofday(&end, NULL);
 
-			timestamps[(j * iters) + i] = tv_to_usecs(start);
-			timestamps[(j * iters) + i + 1] = tv_to_usecs(end);
+			timestamps[(j * 2 * iters) + i] = tv_to_usecs(start);
+			timestamps[(j * 2 * iters) + i + 1] = tv_to_usecs(end);
 
 			if (rank == 0)
 				fprintf(stderr, "%d ", i);
@@ -276,8 +276,8 @@ int main(int argc, char *argv[])
 			memset(line, 0, sizeof(line));
 			snprintf(line, sizeof(line), "len %zu start %"PRIu64" "
 					"end %"PRIu64"\n", len,
-					timestamps[(j * iters) + i],
-					timestamps[(j * iters) + i + 1]);
+					timestamps[(j * 2 * iters) + i],
+					timestamps[(j * 2 * iters) + i + 1]);
 			write_it(line, strlen(line), 1);
 		}
 
