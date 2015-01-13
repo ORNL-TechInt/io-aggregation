@@ -22,11 +22,10 @@ cci_rma_handle_t *local = NULL;
 int irank = -1;
 
 static int
-start_daemon(void)
+start_daemon(char **args)
 {
 	int ret = 0;
-	char *args[2] = { "iod", NULL };
-
+	
 	pid = fork();
 	if (pid == -1) {
 		ret = errno;
@@ -40,12 +39,14 @@ start_daemon(void)
 				strerror(ret));
 
 		exit(ret);
+	} else {
+		fprintf(stderr, "%s daemon started with PID %d\n", args[0], pid);
 	}
 
 	return ret;
 }
 
-int io_init(void *buffer, uint32_t len, uint32_t rank, uint32_t ranks)
+int io_init(void *buffer, uint32_t len, uint32_t rank, uint32_t ranks, char **daemon_args)
 {
 	int ret = 0, fd_iod = -1, ready = 0;
 	uint32_t caps = 0;
@@ -62,7 +63,7 @@ int io_init(void *buffer, uint32_t len, uint32_t rank, uint32_t ranks)
 
 	ifd = open(hostname, O_WRONLY | O_CREAT | O_TRUNC | O_EXCL, 0600);
 	if (ifd != -1) {
-		ret = start_daemon();
+		ret = start_daemon( daemon_args);
 		if (ret) {
 			goto out;
 		}

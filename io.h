@@ -76,7 +76,8 @@ typedef union io_msg {
 
   Each process must call once. The call must be after MPI_Init().
 */
-int io_init(void *buffer, uint32_t len, uint32_t rank, uint32_t ranks);
+int io_init(void *buffer, uint32_t len, uint32_t rank, uint32_t ranks,
+			char **daemon_args);
 
 /*!
   Write the buffer

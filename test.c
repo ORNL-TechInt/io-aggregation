@@ -21,6 +21,7 @@
 #define EXTRA_RAM   0           /* in MB */
 
 int use_io_agg = 0;
+int use_caching_iod = 0;
 int fd = -1, rank = -1;
 
 static void
@@ -34,6 +35,7 @@ print_usage(char *name)
 	fprintf(stderr, "\t-m\tMinimun length (default %d)\n", MIN_LENGTH);
 	fprintf(stderr, "\t-M\tMaximum length (default %d)\n", MAX_LENGTH);
 	fprintf(stderr, "\t-a\tStart the IO aggregation daemon\n");
+	fprintf(stderr, "\t-c\tUse the caching daemon. (Only valid with -a.)\n");
 	fprintf(stderr, "\t-r\tSize of the RMA buffer (for aggregation). "
 	                "In MB (default %d)\n", MAX_LENGTH / (1024*1024));
     fprintf(stderr, "\t-e\tAllocate extra memory. In MB (default %d)\n", EXTRA_RAM);
@@ -117,7 +119,7 @@ int main(int argc, char *argv[])
 	int extra_ram_mb = EXTRA_RAM;
 	char *extra_ram = NULL;
 
-	while ((c = getopt(argc, argv, "i:s:m:M:a")) != -1) {
+	while ((c = getopt(argc, argv, "i:s:m:M:ac")) != -1) {
 		switch (c) {
 		case 'i':
 			iters = strtol(optarg, NULL, 0);
@@ -133,6 +135,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'a':
 			use_io_agg = 1;
+			break;
+		case 'c':
+			use_caching_iod = 1;
 			break;
 		default:
 			print_usage(argv[0]);
@@ -179,7 +184,13 @@ int main(int argc, char *argv[])
 	MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
 	if (use_io_agg) {
-		rc = io_init(buf, max, rank, ranks);
+		/* TODO: we'll eventually have a gpu_caching_iod and will also want
+		 * to pass parameters (such as cache_size) to *_iod. */
+		char *standard_args[2] = { "iod", NULL };
+		char *caching_args[2] = { "caching_iod", NULL };
+		
+		char **args = use_caching_iod?caching_args:standard_args;
+		rc = io_init(buf, max, rank, ranks, args);
 		/* TODO handle error */
 		if (rc)
 			exit(EXIT_FAILURE);
