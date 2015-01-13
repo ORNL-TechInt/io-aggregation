@@ -536,6 +536,7 @@ cache_thread(void *arg)
 		pthread_mutex_lock( &reqs_lock);
 		io_req = TAILQ_FIRST( &reqs);
 		TAILQ_REMOVE(&reqs, io_req, entry);
+		reqs_len--;
 		pthread_mutex_unlock( &reqs_lock);
 		
 		rma_and_cache( io_req);
