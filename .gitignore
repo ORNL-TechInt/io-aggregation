@@ -1,3 +1,4 @@
 *.o
 iod
+caching_iod
 test
