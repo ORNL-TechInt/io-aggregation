@@ -12,6 +12,7 @@
 #include <inttypes.h>
 #ifdef __linux__
 #include <sched.h>
+#include <sys/syscall.h>
 #endif
 
 #include "cci.h"
@@ -217,11 +218,16 @@ pin_to_core(int core)
 #ifdef __linux__
 	int ret = 0;
 	cpu_set_t cpuset;
+	pid_t tid;
+
+	tid = syscall(SYS_gettid);
 
 	CPU_ZERO(&cpuset);
 	CPU_SET(core, &cpuset);
 
-	ret = sched_setaffinity(getpid(), sizeof(cpu_set_t), &cpuset);
+	fprintf(stderr, "%s: pinning tid %d to core %d\n", __func__, tid, core);
+
+	ret = sched_setaffinity(tid, sizeof(cpu_set_t), &cpuset);
 	if (ret) {
 		fprintf(stderr, "%s: sched_setaffinity() failed with %s\n",
 			__func__, strerror(errno));
