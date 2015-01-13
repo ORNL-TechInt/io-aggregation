@@ -22,6 +22,7 @@
 
 int use_io_agg = 0;
 int use_caching_iod = 0;
+int use_gpu_caching_iod = 0;
 int fd = -1, rank = -1;
 
 static void
@@ -35,10 +36,13 @@ print_usage(char *name)
 	fprintf(stderr, "\t-m\tMinimun length (default %d)\n", MIN_LENGTH);
 	fprintf(stderr, "\t-M\tMaximum length (default %d)\n", MAX_LENGTH);
 	fprintf(stderr, "\t-a\tStart the IO aggregation daemon\n");
-	fprintf(stderr, "\t-c\tUse the caching daemon. (Only valid with -a.)\n");
+	fprintf(stderr, "\t-c\tUse the caching daemon (system memory)\n");
+	fprintf(stderr, "\t-g\tUse the caching daemon (gpu memory)\n");
 	fprintf(stderr, "\t-r\tSize of the RMA buffer (for aggregation). "
 	                "In MB (default %d)\n", MAX_LENGTH / (1024*1024));
     fprintf(stderr, "\t-e\tAllocate extra memory. In MB (default %d)\n", EXTRA_RAM);
+	fprintf(stderr, "\n");
+	fprintf(stderr, "\t-c and -g are mutually exclusive.  Both require -a.\n");
 	exit(EXIT_FAILURE);
 }
 
@@ -119,7 +123,7 @@ int main(int argc, char *argv[])
 	int extra_ram_mb = EXTRA_RAM;
 	char *extra_ram = NULL;
 
-	while ((c = getopt(argc, argv, "i:s:m:M:ac")) != -1) {
+	while ((c = getopt(argc, argv, "i:s:m:M:acg")) != -1) {
 		switch (c) {
 		case 'i':
 			iters = strtol(optarg, NULL, 0);
@@ -138,6 +142,11 @@ int main(int argc, char *argv[])
 			break;
 		case 'c':
 			use_caching_iod = 1;
+			use_gpu_caching_iod = 0;
+			break;
+		case 'g':
+			use_caching_iod = 0;
+			use_gpu_caching_iod = 1;
 			break;
 		default:
 			print_usage(argv[0]);
@@ -188,8 +197,16 @@ int main(int argc, char *argv[])
 		 * to pass parameters (such as cache_size) to *_iod. */
 		char *standard_args[2] = { "iod", NULL };
 		char *caching_args[2] = { "caching_iod", NULL };
-		
-		char **args = use_caching_iod?caching_args:standard_args;
+		char *gpu_caching_args[2] = { "gpu_caching_iod", NULL };
+		char **args;
+		if (use_caching_iod) {
+			args = caching_args;
+		} else if (use_gpu_caching_iod) {
+			args = gpu_caching_args;
+		} else {
+			args = standard_args;
+		}
+
 		rc = io_init(buf, max, rank, ranks, args);
 		/* TODO handle error */
 		if (rc)

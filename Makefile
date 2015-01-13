@@ -9,9 +9,16 @@ endif
 MPICC = $(MPI)/bin/mpicc
 endif
 
+ifndef CUDA_HOME
+$(error Export path to CUDA installation in variable named CUDA_HOME)
+endif
+
 CC = gcc
+NVCC = $(CUDA_HOME)/bin/nvcc
 CFLAGS = -g -O0 -std=c99 -D_XOPEN_SOURCE=600 -Wall -pedantic -I$(CCI)/include -fPIC
+NVCFLAGS = -g -O0 -Xcompiler -std=c99 -D_XOPEN_SOURCE=600 -Xcompiler -Wall -Xcompiler -pedantic -I$(CCI)/include -Xcompiler -fPIC
 LDFLAGS = -dynamic -L$(CCI)/lib -lcci -lpthread -Wl,-rpath,$(CCI)/lib
+NVLDFLAGS = -L$(CCI)/lib -lcci -lpthread -Xlinker -rpath=$(CCI)/lib
 OBJS = io.o
 
 C_OBJS = iod.o
@@ -21,8 +28,9 @@ MPI_OBJS = test.o
 MPI_TARGETS = test
 
 CACHING_IOD_OBJS = caching_iod.o
+GPU_CACHING_IOD_OBJS = gpu_caching_iod.o
 
-ALL:$(OBJS) $(C_OBJS) $(MPI_OBJS) $(C_TARGETS) $(MPI_TARGETS) caching_iod
+ALL:$(OBJS) $(C_OBJS) $(MPI_OBJS) $(C_TARGETS) $(MPI_TARGETS) caching_iod gpu_caching_iod
 $(OBJS):%.o:%.c io.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
@@ -35,6 +43,9 @@ $(MPI_OBJS):%.o:%.c io.h
 $(CACHING_IOD_OBJS):%.o:%.c io.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
+$(GPU_CACHING_IOD_OBJS):gpu_%.o:%.c io.h
+	$(NVCC) $(NVCFLAGS) $(CPPFLAGS) -c $< -o $@
+
 $(C_TARGETS):$(C_OBJS) $(OBJS)
 	$(CC) $(OBJS) $(C_OBJS) $(LDFLAGS) -o $@
 
@@ -44,5 +55,8 @@ $(MPI_TARGETS):$(MPI_OBJS) $(OBJS)
 caching_iod: $(CACHING_IOD_OBJS) $(OBJS)
 	$(CC) $(OBJS) $(CACHING_IOD_OBJS) $(LDFLAGS) -o $@
 
+gpu_caching_iod: $(GPU_CACHING_IOD_OBJS) $(OBJS)
+	$(NVCC) $(OBJS) $(GPU_CACHING_IOD_OBJS) $(NVLDFLAGS) -o $@
+
 clean:
-	rm -rf $(C_TARGETS) $(MPI_TARGETS) caching_iod $(C_OBJS) $(MPI_OBJS) $(CACHING_IOD_OBJS) $(OBJS) *.dSYM
+	rm -rf $(C_TARGETS) $(MPI_TARGETS) caching_iod gpu_caching_iod $(C_OBJS) $(MPI_OBJS) $(CACHING_IOD_OBJS) $(GPU_CACHING_IOD_OBJS) $(OBJS) *.dSYM

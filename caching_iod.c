@@ -15,6 +15,12 @@
 #include <sys/syscall.h>
 #endif
 
+#ifdef __NVCC__
+#include <cuda_runtime.h>
+#include <cuda.h>
+#endif
+
+
 #include "cci.h"
 #include "io.h"
 
@@ -92,6 +98,35 @@ uint64_t						cache_size; /* keep track of how much memory
 #define MAX_CACHE_SIZE			(2L * 1024 * 1024 * 1024) /* 2GB */
 /* TODO: This needs to be a command line parameter! */
 
+
+#ifdef __NVCC__
+
+#ifdef __DRIVER_TYPES_H__
+#ifndef DEVICE_RESET
+#define DEVICE_RESET cudaDeviceReset();
+#endif
+#else
+#ifndef DEVICE_RESET
+#define DEVICE_RESET 
+#endif
+#endif
+
+void checkCudaErrImpl(cudaError_t result, char const *const func,
+					  const char *const file, int const line)
+{
+	if (result)
+	{
+		fprintf(stderr, "CUDA error at %s:%d code=%d -- %s -- \"%s\" \n",
+				file, line, (unsigned int)(result), cudaGetErrorString(result), func);
+				DEVICE_RESET
+		// Make sure we call CUDA Device Reset before exiting
+		exit(EXIT_FAILURE);
+	}
+}
+
+#define checkCudaErrors(val)  checkCudaErrImpl( (val), #val, __FILE__, __LINE__ )
+
+#endif  /* __NVCC__ */
 
 uint64_t min64( uint64_t a, uint64_t b) { return (a < b)?a:b; }
 uint64_t max64( uint64_t a, uint64_t b) { return (a > b)?a:b; }
@@ -248,6 +283,19 @@ io(void *arg)
 {
 	pin_to_core(5);
 	
+	void *bounce_buffer;
+	
+#ifdef __NVCC__
+	/* We can't write to disk directly from the cuda memory (yet - CUDA 6 unified
+	 * memory might fix this) so we need a buffer in system memory to copy
+	 * the data into first. */
+	bounce_buffer = malloc(RMA_BUF_SIZE);
+	if (!bounce_buffer) {
+		fprintf(stderr, "%s: failed to allocate gpu bounce buffer.  Aborting.\n",
+			__func__);
+		abort();
+	}
+#endif
 
 	while (!done || !TAILQ_EMPTY(&cache_blocks)) {
 		/* Don't exit until we've drained the cache, even if the rest
@@ -281,10 +329,17 @@ io(void *arg)
 			io_req->deq_us = get_us();
 		}
 
+#ifdef __NVCC__
+		/* Copy the data out of the GPU memory */
+		checkCudaErrors( cudaMemcpy( bounce_buffer, cb->cache, cb->len, cudaMemcpyDeviceToHost));
+#else
+		bounce_buffer = cb->cache;
+#endif
+		
 		offset = 0;
 		do {
 			int ret = write(p->fd,
-					(void*)((uintptr_t)cb->cache + offset),
+					(void*)((uintptr_t)bounce_buffer + offset),
 					cb->len - offset);
 			if (ret > 0) {
 				offset += ret;
@@ -297,7 +352,11 @@ io(void *arg)
 		} while (offset < cb->len);
 
 		/* Free the cache block */
+#ifdef __NVCC__
+		checkCudaErrors( cudaFree(cb->cache));
+#else
 		free( cb->cache);
+#endif
 		pthread_mutex_lock(&cache_lock);
 		cache_size -= cb->len;
 		pthread_mutex_unlock(&cache_lock);
@@ -325,6 +384,10 @@ io(void *arg)
 		pthread_mutex_unlock(&p->lock);
 	}
 
+#ifdef __NVCC__
+	free(bounce_buffer); /* Free the bounce buffer we allocated */
+#endif
+	
 	pthread_exit(NULL);
 }
 
@@ -393,7 +456,11 @@ rma_and_cache(io_req_t *io)
 		 * Better to implement some kind of block pool that we can allocate once
 		 * and then use blocks from */
 		/* TODO: For the GPU implementation, we'd use CUDAMalloc() here, and 
-		 * CUDAMemCpy() down below.   Can probably use "#ifdef __CUDACC__"*/
+		 * CUDAMemCpy() down below.   Can probably use "#ifdef __NVCC__"*/
+#ifdef __NVCC__
+		checkCudaErrors(cudaMalloc((void **) &cb->cache, cb->len));
+		checkCudaErrors(cudaMemcpy(cb->cache, p->buffer, cb->len, cudaMemcpyHostToDevice));
+#else
 		cb->cache = malloc( cb->len);
 		if (!cb->cache) {
 			fprintf(stderr, "%s: unable to allocate mem for cached data for rank %u\n",
@@ -403,6 +470,7 @@ rma_and_cache(io_req_t *io)
 		}
 		
 		memcpy( cb->cache, p->buffer, cb->len);
+#endif
 
 		pthread_mutex_lock( &cache_lock);
 		cache_size += cb->len;
