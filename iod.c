@@ -9,8 +9,10 @@
 #include <sys/queue.h>
 #include <assert.h>
 #include <inttypes.h>
+#include <sys/types.h>
 #ifdef __linux__
 #include <sched.h>
+#include <sys/syscall.h>
 #endif
 
 #include "cci.h"
@@ -186,11 +188,16 @@ pin_to_core(int core)
 #ifdef __linux__
 	int ret = 0;
 	cpu_set_t cpuset;
+	pid_t tid;
+
+	tid = syscall(SYS_gettid);
 
 	CPU_ZERO(&cpuset);
 	CPU_SET(core, &cpuset);
 
-	ret = sched_setaffinity(getpid(), sizeof(cpu_set_t), &cpuset);
+	fprintf(stderr, "%s: pinning tid %d to core %d\n", __func__, tid, core);
+
+	ret = sched_setaffinity(tid, sizeof(cpu_set_t), &cpuset);
 	if (ret) {
 		fprintf(stderr, "%s: sched_setaffinity() failed with %s\n",
 			__func__, strerror(errno));
@@ -202,12 +209,12 @@ pin_to_core(int core)
 static void *
 io(void *arg)
 {
+	pin_to_core(3);
+
 	while (!done) {
 		io_req_t *io = NULL;
 		peer_t *p = NULL;
 		uint32_t offset = 0;
-
-		pin_to_core(3);
 
 		pthread_mutex_lock(&lock);
 		if (TAILQ_EMPTY(&reqs)) {
