@@ -74,6 +74,7 @@ typedef struct cache_block {
 	peer_t			*peer;	/* client peer */
 	io_req_t		*io_req; /* only valid if this is the last cache block for the request */
 	uint64_t		offset; /* offset into the file where we should start writing */
+	/* TODO: I don't think we need this offset value */
 	uint64_t		len;	/* how much data to write */
 	void			*cache;	/* pointer to the cached data. */
 							/* NOTE: in the GPU implementation, this will be a
@@ -240,54 +241,75 @@ pin_to_core(int core)
  * These functions are called by the io thread.
  * They dequeue data from the cache and actually write it to disk
  * ****************************************************************** */
-#if 0
 static void *
 io(void *arg)
 {
+	pin_to_core(5);
+	
 
-Dont forget the free() the cache_block struct as well as the actual
-cache memory!
-
-
-	while (!done) {
-		io_req_t *io = NULL;
+	while (!done || !TAILQ_EMPTY(&cache_blocks)) {
+		/* Don't exit until we've drained the cache, even if the rest
+		 * of the program is shutting down. */
+		cache_block_t * cb = NULL;
+		io_req_t *io_req = NULL;
 		peer_t *p = NULL;
 		uint32_t offset = 0;
 		
-		pin_to_core(5);
+		if (sem_wait( &cache_sem))
+		{
+			if (errno == EINTR)
+			{
+				/* No big deal (seems to happen inside the debugger
+				 * fairly often).  Go back to sleep */
+				continue;
+			}
+		}
+		
+		if (done) continue;
 
-		pthread_mutex_lock(&lock);
-		if (TAILQ_EMPTY(&reqs)) {
-			pthread_cond_wait(&cv, &lock);
+		pthread_mutex_lock( &cache_lock);
+		cb = TAILQ_FIRST( &cache_blocks);
+		TAILQ_REMOVE(&cache_blocks, cb, entry);
+		pthread_mutex_unlock( &cache_lock);
+		
+		p = cb->peer;
+		if (cb->io_req != NULL) {
+			io_req = cb->io_req;
+			/* This must be the last cache block for this request */
+			io_req->deq_us = get_us();
 		}
 
-		io = TAILQ_FIRST(&reqs);
-		TAILQ_REMOVE(&reqs, io, entry);
-		pthread_mutex_unlock(&lock);
-
-		io->deq_us = get_us();
-
-		p = io->peer;
-
+		offset = 0;
 		do {
 			int ret = write(p->fd,
-					(void*)((uintptr_t)p->buffer + offset),
-					io->len - offset);
+					(void*)((uintptr_t)cb->cache + offset),
+					cb->len - offset);
 			if (ret > 0) {
 				offset += ret;
 			} else if (errno != EINTR) {
-				fprintf(stderr, "%s: write() of %u bytes for rank %u "
+				fprintf(stderr, "%s: write() of %lu bytes for rank %u "
 						" failed with %s\n", __func__,
-						io->len - offset, p->rank, strerror(errno));
+						cb->len - offset, p->rank, strerror(errno));
 				assert(0);
 			}
-		} while (offset < io->len);
+		} while (offset < cb->len);
 
-		io->io_us = get_us();
+		/* Free the cache block */
+		free( cb->cache);
+		pthread_mutex_lock(&cache_lock);
+		cache_size -= cb->len;
+		pthread_mutex_unlock(&cache_lock);
+		free( cb);
+		
+		if (io_req) {
+			/* This is the last cache block for this request.  Update the
+			 * timers and push it on to the completed queue */
+			io_req->io_us = get_us();
 
-		TAILQ_INSERT_TAIL(&p->ios, io, entry);
-		p->completed++;
-
+			TAILQ_INSERT_TAIL(&p->ios, io_req, entry);
+			p->completed++;
+		}
+			
 		pthread_mutex_lock(&p->lock);
 		if (p->done) {
 			if (p->requests == p->completed) {
@@ -303,13 +325,6 @@ cache memory!
 
 	pthread_exit(NULL);
 }
-#else
-static void *
-io(void *arg)
-{
-	return NULL; /* do-nothing placeholder function */
-}
-#endif
 
 /* ******************************************************************
  * These functions are called by the caching thread.
@@ -800,6 +815,14 @@ main(int argc, char *argv[])
 	sem_init( &cache_sem, 0, 0);
 	pthread_mutex_init( &cache_lock, NULL);
 
+#if 0
+	/* wait for debugger to attach */
+	int dbg_wait = 1;
+	while (dbg_wait) {
+		usleep( 100);
+	}
+#endif
+	
 	ret = pthread_create(&io_tid, NULL, io, NULL);
 	if (ret) {
 		fprintf(stderr, "pthread_create() failed with %s\n", strerror(ret));
@@ -811,14 +834,6 @@ main(int argc, char *argv[])
 		fprintf(stderr, "pthread_create() failed with %s\n", strerror(ret));
 		goto out;
 	}
-	
-#if 0
-	/* wait for debugger to attach */
-	int dbg_wait = 1;
-	while (dbg_wait) {
-		usleep( 100);
-	}
-#endif
 	
 	comm_loop();
 
