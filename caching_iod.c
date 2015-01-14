@@ -552,7 +552,7 @@ cache_thread(void *arg)
 static void
 handle_connect_request(cci_event_t *event)
 {
-	int ret = 0;
+	int ret = 0, i = 0;
 	io_msg_t *msg = (void*) event->request.data_ptr;
 	peer_t *p = NULL;
 	char name[32];
@@ -596,6 +596,13 @@ handle_connect_request(cci_event_t *event)
 		ret = ENOMEM;
 		goto out;
 	}
+	
+	i = 0;
+	do {
+                char *c = (void *)((uintptr_t)p->buffer + i);
+                *c = 'a';
+		i+= sysconf( _SC_PAGESIZE);
+        } while (i < p->len);
 
 	ret = cci_rma_register(ep, p->buffer, p->len, CCI_FLAG_WRITE, &p->local);
 	if (ret) {
