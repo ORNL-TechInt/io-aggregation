@@ -265,7 +265,7 @@ io(void *arg)
 static void
 handle_connect_request(cci_event_t *event)
 {
-	int ret = 0;
+	int ret = 0, i = 0;
 	io_msg_t *msg = (void*) event->request.data_ptr;
 	peer_t *p = NULL;
 	char name[32];
@@ -303,6 +303,12 @@ handle_connect_request(cci_event_t *event)
 			__func__, p->rank);
 		ret = ENOMEM;
 		goto out;
+	}
+
+	for (i = 0; i < p->len; i += 4096) {
+		char *c = (void *)((uintptr_t)p->buffer + i);
+
+		*c = 'a';
 	}
 
 	ret = cci_rma_register(ep, p->buffer, p->len, CCI_FLAG_WRITE, &p->local);
