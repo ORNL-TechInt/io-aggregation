@@ -330,6 +330,7 @@ int io_finalize(void)
 	sleep(1);
 
 	if (pid != -1) {
+		signal(SIGCHLD, SIG_IGN);
 		kill(pid, SIGKILL);
 		waitpid(pid, NULL, 0);
 	}
