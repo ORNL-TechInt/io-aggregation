@@ -297,13 +297,15 @@ handle_connect_request(cci_event_t *event)
 	p->len = msg->connect.len;
 	p->rank = msg->connect.rank;
 
-	p->buffer = malloc(msg->connect.len);
+	//p->buffer = malloc(msg->connect.len);
+	ret = posix_memalign(&p->buffer, 4096, p->len);
 	if (!p->buffer) {
 		fprintf(stderr, "%s: unable to allocate buffer for rank %u\n",
 			__func__, p->rank);
 		ret = ENOMEM;
 		goto out;
 	}
+	fprintf(stderr, "%s: allocated %zu bytes at %p\n", __func__, p->len, p->buffer);
 
 	for (i = 0; i < p->len; i += 4096) {
 		char *c = (void *)((uintptr_t)p->buffer + i);

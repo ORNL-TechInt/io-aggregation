@@ -180,11 +180,14 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 
-	buf = malloc(max);
+	//buf = malloc(max);
+	rc = posix_memalign(&buf, 4096, max);
 	if (!buf) {
 		perror("malloc():");
 		exit(EXIT_FAILURE);
 	}
+
+	fprintf(stderr, "%s: allocated %zu bytes at %p\n", argv[0], max, buf);
 
 	init_buffer(buf, max, rank);
 
@@ -249,7 +252,7 @@ int main(int argc, char *argv[])
 			timestamps[(j * 2 * iters) + i + 1] = tv_to_usecs(end);
 
 			if (rank == 0)
-				fprintf(stderr, "%d ", i);
+				fprintf(stderr, "%d ", i / 2);
 
 			/* Sleep instead of doing work for now */
 			sleep(secs);
