@@ -298,7 +298,7 @@ handle_connect_request(cci_event_t *event)
 	p->rank = msg->connect.rank;
 
 	//p->buffer = malloc(msg->connect.len);
-	ret = posix_memalign(&p->buffer, 4096, p->len);
+	ret = posix_memalign(&p->buffer, getpagesize(), p->len);
 	if (!p->buffer) {
 		fprintf(stderr, "%s: unable to allocate buffer for rank %u\n",
 			__func__, p->rank);

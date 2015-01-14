@@ -122,6 +122,7 @@ int main(int argc, char *argv[])
 	uint64_t *timestamps = NULL;
 	int extra_ram_mb = EXTRA_RAM;
 	char *extra_ram = NULL;
+	long pgsize = 0;
 
 	while ((c = getopt(argc, argv, "i:s:m:M:acg")) != -1) {
 		switch (c) {
@@ -180,8 +181,10 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 
+	pgsize = sysconf(_SC_PAGESIZE);
+
 	//buf = malloc(max);
-	rc = posix_memalign(&buf, 4096, max);
+	rc = posix_memalign(&buf, pgsize, max);
 	if (!buf) {
 		perror("malloc():");
 		exit(EXIT_FAILURE);
