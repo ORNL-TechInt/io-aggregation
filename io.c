@@ -184,9 +184,11 @@ int io_write(uint32_t len)
 	int ret = 0, done = 0;
 	static int i = 0;
 	io_msg_t msg;
+#if 0
 	struct timeval start, end;
 
 	gettimeofday(&start, NULL);
+#endif
 
 	i++;
 
@@ -216,6 +218,8 @@ int io_write(uint32_t len)
 				assert(rx->type == WRITE_DONE);
 				break;
 			default:
+				fprintf(stderr, "%s: ignoring %s\n",
+					__func__, cci_event_type_str(event->type));
 				break;
 			}
 			cci_return_event(event);
@@ -223,8 +227,10 @@ int io_write(uint32_t len)
 		}
 	} while (done < 2);
 
+#if 0
 	gettimeofday(&end, NULL);
 	print_perf(len, start, end);
+#endif
 
     out:
 	return ret;
