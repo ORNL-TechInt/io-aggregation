@@ -21,10 +21,19 @@ cci_connection_t *connection = NULL;
 cci_rma_handle_t *local = NULL;
 int irank = -1;
 
+static void
+handle_sigchld(int sig)
+{
+	abort();
+	return;
+}
+
 static int
 start_daemon(char **args)
 {
 	int ret = 0;
+
+	signal(SIGCHLD, handle_sigchld);
 
 	pid = fork();
 	if (pid == -1) {
@@ -307,6 +316,8 @@ int io_finalize(void)
 		fprintf(stderr, "%s: cci_destroy_endpoint() failed with %s\n", __func__,
 				cci_strerror(NULL, ret));
 	}
+
+	sleep(1);
 
 	if (pid != -1) {
 		kill(pid, SIGKILL);
