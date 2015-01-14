@@ -24,7 +24,17 @@ int irank = -1;
 static void
 handle_sigchld(int sig)
 {
-	abort();
+	int status;
+
+	waitpid(pid, &status, 0);
+	if (WIFEXITED(status)) {
+		fprintf(stderr, "%s: daemon exited, status=%d\n",
+			__func__, WEXITSTATUS(status));
+	} else if (WIFSIGNALED(status)) {
+		fprintf(stderr, "%s: killed by signal %d\n",
+			__func__, WTERMSIG(status));
+		abort();
+	}
 	return;
 }
 
