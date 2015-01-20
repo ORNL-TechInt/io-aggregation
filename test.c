@@ -29,7 +29,8 @@ static void
 print_usage(char *name)
 {
 	fprintf(stderr, "usage: %s [-i <iterations>] [-s <sleep_seconds>] "
-			"[-m <min_length>] [-M <max_length>] [-f]\n", name);
+			"[-m <min_length>] [-M <max_length>] [-a | -c | -g] "
+			"[-r] [-e]\n", name);
 	fprintf(stderr, "where:\n");
 	fprintf(stderr, "\t-i\tNumber of iterations (default %d)\n", ITERS);
 	fprintf(stderr, "\t-s\tSeconds between writes (default %d)\n", SLEEP_SECS);
@@ -124,7 +125,7 @@ int main(int argc, char *argv[])
 	char *extra_ram = NULL;
 	long pgsize = 0;
 
-	while ((c = getopt(argc, argv, "i:s:m:M:acg")) != -1) {
+	while ((c = getopt(argc, argv, "i:s:m:M:acge:")) != -1) {
 		switch (c) {
 		case 'i':
 			iters = strtol(optarg, NULL, 0);
@@ -142,12 +143,17 @@ int main(int argc, char *argv[])
 			use_io_agg = 1;
 			break;
 		case 'c':
+			use_io_agg = 1;
 			use_caching_iod = 1;
 			use_gpu_caching_iod = 0;
 			break;
 		case 'g':
+			use_io_agg = 1;
 			use_caching_iod = 0;
 			use_gpu_caching_iod = 1;
+			break;
+		case 'e':
+			extra_ram_mb = strtol(optarg, NULL, 0);
 			break;
 		default:
 			print_usage(argv[0]);
