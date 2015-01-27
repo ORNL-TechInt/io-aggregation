@@ -244,9 +244,10 @@ io(void *arg)
 		io->io_us = get_us();
 
 		TAILQ_INSERT_TAIL(&p->ios, io, entry);
-		p->completed++;
 
 		pthread_mutex_lock(&p->lock);
+		p->completed++;
+
 		if (p->done) {
 			if (p->requests == p->completed) {
 				/* drop the lock, because print_results will
@@ -382,7 +383,9 @@ handle_write_req(cci_event_t *event)
 		goto out;
 	}
 
+	pthread_mutex_lock(&p->lock);
 	p->requests++;
+	pthread_mutex_unlock(&p->lock);
 
 	io->peer = p;
 	io->rx_us = get_us();
@@ -410,10 +413,13 @@ handle_bye(cci_event_t *event)
 
 	pthread_mutex_lock(&p->lock);
 	p->done = 1;
-	pthread_mutex_unlock(&p->lock);
 
-	if (p->requests == p->completed)
+	if (p->requests == p->completed) {
+		pthread_mutex_unlock(&p->lock);
 		print_results(p);
+		return;
+	}
+	pthread_mutex_unlock(&p->lock);
 
 	return;
 }
