@@ -128,8 +128,9 @@ int main(int argc, char *argv[])
 	int extra_ram_mb = EXTRA_RAM;
 	char *extra_ram = NULL;
 	long pgsize = 0;
+	int null_io = 0;
 
-	while ((c = getopt(argc, argv, "i:s:m:M:acge:bB")) != -1) {
+	while ((c = getopt(argc, argv, "i:s:m:M:acge:bBN")) != -1) {
 		switch (c) {
 		case 'i':
 			iters = strtol(optarg, NULL, 0);
@@ -164,6 +165,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'B':
 			iod_blocking = 1;
+			break;
+		case 'N':
+			null_io = 1;
 			break;
 		default:
 			print_usage(argv[0]);
@@ -222,8 +226,12 @@ int main(int argc, char *argv[])
 		char *gpu_caching_iod = "gpu_caching_iod";
 		char **args = NULL;
 		int num_args = 2; /* process + NULL */
+		int a = 0;
 
 		if (iod_blocking)
+			num_args++;
+
+		if (null_io)
 			num_args++;
 
 		args = calloc(num_args, sizeof(*args));
@@ -231,15 +239,18 @@ int main(int argc, char *argv[])
 			exit(EXIT_FAILURE);
 
 		if (use_caching_iod) {
-			args[0] = caching_iod;
+			args[a++] = caching_iod;
 		} else if (use_gpu_caching_iod) {
-			args[0] = gpu_caching_iod;
+			args[a++] = gpu_caching_iod;
 		} else {
-			args[0] = iod;
+			args[a++] = iod;
 		}
 
 		if (iod_blocking)
-			args[1] = "-b";
+			args[a++] = "-b";
+
+		if (null_io)
+			args[a++] = "-n";
 
 		args[num_args - 1] = NULL;
 
