@@ -25,6 +25,7 @@ int use_caching_iod = 0;
 int use_gpu_caching_iod = 0;
 int fd = -1, rank = -1;
 int blocking = 0;
+int iod_blocking = 0;
 
 static void
 print_usage(char *name)
@@ -45,6 +46,8 @@ print_usage(char *name)
     fprintf(stderr, "\t-e\tAllocate extra memory. In MB (default %d)\n", EXTRA_RAM);
 	fprintf(stderr, "\n");
 	fprintf(stderr, "\t-c and -g are mutually exclusive.  Both require -a.\n");
+	fprintf(stderr, "\t-b\tUse CCI blocking mode on client\n");
+	fprintf(stderr, "\t-B\tUse CCI blocking mode on iod daemon\n");
 	exit(EXIT_FAILURE);
 }
 
@@ -126,7 +129,7 @@ int main(int argc, char *argv[])
 	char *extra_ram = NULL;
 	long pgsize = 0;
 
-	while ((c = getopt(argc, argv, "i:s:m:M:acge:b")) != -1) {
+	while ((c = getopt(argc, argv, "i:s:m:M:acge:bB")) != -1) {
 		switch (c) {
 		case 'i':
 			iters = strtol(optarg, NULL, 0);
@@ -158,6 +161,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'b':
 			blocking = 1;
+			break;
+		case 'B':
+			iod_blocking = 1;
 			break;
 		default:
 			print_usage(argv[0]);
@@ -211,19 +217,36 @@ int main(int argc, char *argv[])
 	if (use_io_agg) {
 		/* TODO: we'll eventually have a gpu_caching_iod and will also want
 		 * to pass parameters (such as cache_size) to *_iod. */
-		char *standard_args[2] = { "iod", NULL };
-		char *caching_args[2] = { "caching_iod", NULL };
-		char *gpu_caching_args[2] = { "gpu_caching_iod", NULL };
-		char **args;
+		char *iod = "iod";
+		char *caching_iod = "caching_iod";
+		char *gpu_caching_iod = "gpu_caching_iod";
+		char **args = NULL;
+		int num_args = 2; /* process + NULL */
+
+		if (iod_blocking)
+			num_args++;
+
+		args = calloc(num_args, sizeof(*args));
+		if (!args)
+			exit(EXIT_FAILURE);
+
 		if (use_caching_iod) {
-			args = caching_args;
+			args[0] = caching_iod;
 		} else if (use_gpu_caching_iod) {
-			args = gpu_caching_args;
+			args[0] = gpu_caching_iod;
 		} else {
-			args = standard_args;
+			args[0] = iod;
 		}
 
+		if (iod_blocking)
+			args[1] = "-b";
+
+		args[num_args - 1] = NULL;
+
 		rc = io_init(buf, max, rank, ranks, args, blocking);
+
+		free(args);
+
 		/* TODO handle error */
 		if (rc)
 			exit(EXIT_FAILURE);
