@@ -70,6 +70,8 @@ typedef union io_msg {
   \param[in] len	Length of the buffer
   \param[in] rank	Caller's MPI rank
   \param[in] ranks	Total MPI ranks on node
+  \param[in] daemon_args Args for execve()
+  \param[in] blocking	Use CCI in blocking mode
 
   \return 0		Success, data written to daemon
   \return errno
@@ -77,7 +79,7 @@ typedef union io_msg {
   Each process must call once. The call must be after MPI_Init().
 */
 int io_init(void *buffer, uint32_t len, uint32_t rank, uint32_t ranks,
-			char **daemon_args);
+			char **daemon_args, int blocking);
 
 /*!
   Write the buffer

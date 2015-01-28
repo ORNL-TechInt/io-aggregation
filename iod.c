@@ -306,7 +306,7 @@ handle_connect_request(cci_event_t *event)
 		ret = ENOMEM;
 		goto out;
 	}
-	fprintf(stderr, "%s: allocated %zu bytes at %p\n", __func__, p->len, p->buffer);
+	fprintf(stderr, "%s: allocated %u bytes at %p\n", __func__, p->len, p->buffer);
 
 	for (i = 0; i < p->len; i += 4096) {
 		char *c = (void *)((uintptr_t)p->buffer + i);

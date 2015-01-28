@@ -24,6 +24,7 @@ int use_io_agg = 0;
 int use_caching_iod = 0;
 int use_gpu_caching_iod = 0;
 int fd = -1, rank = -1;
+int blocking = 0;
 
 static void
 print_usage(char *name)
@@ -125,7 +126,7 @@ int main(int argc, char *argv[])
 	char *extra_ram = NULL;
 	long pgsize = 0;
 
-	while ((c = getopt(argc, argv, "i:s:m:M:acge:")) != -1) {
+	while ((c = getopt(argc, argv, "i:s:m:M:acge:b")) != -1) {
 		switch (c) {
 		case 'i':
 			iters = strtol(optarg, NULL, 0);
@@ -154,6 +155,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'e':
 			extra_ram_mb = strtol(optarg, NULL, 0);
+			break;
+		case 'b':
+			blocking = 1;
 			break;
 		default:
 			print_usage(argv[0]);
@@ -219,7 +223,7 @@ int main(int argc, char *argv[])
 			args = standard_args;
 		}
 
-		rc = io_init(buf, max, rank, ranks, args);
+		rc = io_init(buf, max, rank, ranks, args, blocking);
 		/* TODO handle error */
 		if (rc)
 			exit(EXIT_FAILURE);

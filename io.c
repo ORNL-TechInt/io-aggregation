@@ -9,6 +9,7 @@
 #include <inttypes.h>
 #include <assert.h>
 #include <sys/time.h>
+#include <poll.h>
 
 #include "io.h"
 
@@ -20,6 +21,8 @@ cci_endpoint_t *endpoint = NULL;
 cci_connection_t *connection = NULL;
 cci_rma_handle_t *local = NULL;
 int irank = -1;
+cci_os_handle_t *cfd = NULL, ep_fd;
+struct pollfd pfd;
 
 static void
 handle_sigchld(int sig)
@@ -65,7 +68,8 @@ start_daemon(char **args)
 	return ret;
 }
 
-int io_init(void *buffer, uint32_t len, uint32_t rank, uint32_t ranks, char **daemon_args)
+int io_init(void *buffer, uint32_t len, uint32_t rank, uint32_t ranks,
+		char **daemon_args, int blocking)
 {
 	int ret = 0, fd_iod = -1, ready = 0;
 	uint32_t caps = 0;
@@ -95,11 +99,19 @@ int io_init(void *buffer, uint32_t len, uint32_t rank, uint32_t ranks, char **da
 		goto out;
 	}
 
-	ret = cci_create_endpoint(NULL, 0, &endpoint, NULL);
+	if (blocking)
+		cfd = &ep_fd;
+
+	ret = cci_create_endpoint(NULL, 0, &endpoint, cfd);
 	if (ret) {
 		fprintf(stderr, "%s: cci_create_endpoint() failed with %s\n",
 				__func__, cci_strerror(NULL, ret));
 		goto out;
+	}
+
+	if (blocking) {
+		pfd.fd = ep_fd;
+		pfd.events = POLLIN;
 	}
 
 	ret = cci_rma_register(endpoint, buffer, (uint64_t)len,
@@ -203,11 +215,6 @@ int io_write(uint32_t len)
 	int ret = 0, done = 0;
 	static int i = 0;
 	io_msg_t msg;
-#if 0
-	struct timeval start, end;
-
-	gettimeofday(&start, NULL);
-#endif
 
 	i++;
 
@@ -223,6 +230,9 @@ int io_write(uint32_t len)
 
 	do {
 		cci_event_t *event = NULL;
+
+		if (cfd)
+			poll(&pfd, 1, 0);
 
 		ret = cci_get_event(endpoint, &event);
 		if (!ret) {
