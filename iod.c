@@ -240,19 +240,21 @@ io(void *arg)
 
 		p = io->peer;
 
-		do {
-			int ret = write(p->fd,
+		if (!null_io) {
+			do {
+				int ret = write(p->fd,
 					(void*)((uintptr_t)p->buffer + offset),
 					io->len - offset);
-			if (ret > 0) {
-				offset += ret;
-			} else if (errno != EINTR) {
-				fprintf(stderr, "%s: write() of %u bytes for rank %u "
+				if (ret > 0) {
+					offset += ret;
+				} else if (errno != EINTR) {
+					fprintf(stderr, "%s: write() of %u bytes for rank %u "
 						" failed with %s\n", __func__,
 						io->len - offset, p->rank, strerror(errno));
-				assert(0);
-			}
-		} while (offset < io->len);
+					assert(0);
+				}
+			} while (offset < io->len);
+		}
 
 		io->io_us = get_us();
 
