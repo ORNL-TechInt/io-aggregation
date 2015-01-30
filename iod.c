@@ -14,6 +14,7 @@
 #include <sched.h>
 #include <sys/syscall.h>
 #endif
+#include <poll.h>
 
 #include "cci.h"
 #include "io.h"
@@ -21,6 +22,9 @@
 cci_endpoint_t *ep = NULL;
 int done = 0;
 int connected_peers = 0;
+int null_io = 0;
+int blocking = 0;
+cci_os_handle_t cci_fd = 0, *ep_fd = NULL;
 
 #define IOD_TX_FINI	((void*)((uintptr_t)0x1))
 
@@ -107,11 +111,20 @@ print_results(peer_t *p)
 {
 	int ret = 0;
 	io_msg_t msg;
-	char *buf = NULL;
+	char *buf = NULL, name[32];
 	size_t len = p->completed * 4 * 32, offset = 0, newlen = 0;
 
-	ftruncate(p->fd, 0);
-	lseek(p->fd, 0, SEEK_SET);
+	close(p->fd);
+
+	memset(name, 0, sizeof(name));
+	snprintf(name, sizeof(name), "rank-%u-iod", p->rank);
+
+	p->fd = open(name, O_RDWR|O_CREAT, 0644);
+	if (p->fd == -1) {
+		fprintf(stderr, "%s: open(%s) failed with %s\n", __func__, name,
+				strerror(errno));
+		return;
+	}
 
 	/* allocate buffer - reserve for 4 uint64_t (which use a max of 20 chars)
 	 * for each completed IO request.
@@ -325,7 +338,7 @@ handle_connect_request(cci_event_t *event)
 	pthread_mutex_init(&p->lock, NULL);
 
 	memset(name, 0, sizeof(name));
-	snprintf(name, sizeof(name), "rank-%u-iod", p->rank);
+	snprintf(name, sizeof(name), "rank-%u-iod-data", p->rank);
 
 	p->fd = open(name, O_RDWR|O_CREAT, 0644);
 	if (p->fd == -1) {
@@ -492,10 +505,19 @@ comm_loop(void)
 {
 	int ret = 0;
 	cci_event_t *event = NULL;
+	struct pollfd pfd;
+
+	if (blocking) {
+		pfd.fd = *ep_fd;
+		pfd.events = POLLIN;
+	}
 
 	TAILQ_INIT(&peers);
 
 	while (!done) {
+		if (blocking)
+			poll(&pfd, 1, 0);
+
 		ret = cci_get_event(ep, &event);
 		if (ret) {
 			if (ret != CCI_EAGAIN) {
@@ -532,15 +554,38 @@ comm_loop(void)
 	return;
 }
 
+void
+print_usage(char *name)
+{
+	fprintf(stderr, "usage: %s [-b] [-n]\n", name);
+	fprintf(stderr, "where:\n");
+	fprintf(stderr, "\t-b\tUse CCI blocking mode\n");
+	fprintf(stderr, "\t-n\tNULL IO - do not write data to file system\n");
+	exit(EXIT_FAILURE);
+}
+
 int
 main(int argc, char *argv[])
 {
-	int ret = 0, i = 0, fd = -1;
+	int ret = 0, i = 0, fd = -1, c = 0;
 	uint32_t caps = 0;
 	cci_device_t *const *devices, *device = NULL;
 	char *uri = NULL;
 	char hostname[64], name[128];
 	pthread_t tid;
+
+	while ((c = getopt(argc, argv, "bn")) != -1) {
+		switch (c) {
+		case 'n':
+			null_io = 1;
+			break;
+		case 'b':
+			blocking = 1;
+			break;
+		default:
+			print_usage(argv[0]);
+		}
+	}
 
 	ret = cci_init(CCI_ABI_VERSION, 0, &caps);
 	if (ret) {
@@ -577,7 +622,10 @@ main(int argc, char *argv[])
 		goto out;
 	}
 
-	ret = cci_create_endpoint(device, 0, &ep, NULL);
+	if (blocking)
+		ep_fd = &cci_fd;
+
+	ret = cci_create_endpoint(device, 0, &ep, ep_fd);
 	if (ret) {
 		fprintf(stderr, "cci_create_endpoint() failed with %s\n",
 				cci_strerror(NULL, ret));
