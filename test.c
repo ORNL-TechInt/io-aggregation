@@ -48,6 +48,7 @@ print_usage(char *name)
 	fprintf(stderr, "\t-c and -g are mutually exclusive.  Both require -a.\n");
 	fprintf(stderr, "\t-b\tUse CCI blocking mode on client\n");
 	fprintf(stderr, "\t-B\tUse CCI blocking mode on iod daemon\n");
+	fprintf(stderr, "\t-N\tUse NULL IO on iod daemon\n");
 	exit(EXIT_FAILURE);
 }
 

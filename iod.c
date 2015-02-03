@@ -16,7 +16,6 @@
 #endif
 #include <poll.h>
 
-#include "cci.h"
 #include "io.h"
 
 cci_endpoint_t *ep = NULL;
@@ -24,7 +23,7 @@ int done = 0;
 int connected_peers = 0;
 int null_io = 0;
 int blocking = 0;
-cci_os_handle_t cci_fd = 0, *ep_fd = NULL;
+cci_os_handle_t cci_fd = 0, *osh = NULL;
 
 #define IOD_TX_FINI	((void*)((uintptr_t)0x1))
 
@@ -55,6 +54,7 @@ typedef struct io_req {
 	TAILQ_ENTRY(io_req)	entry;	/* To hang on io_q->reqs */
 	peer_t			*peer;	/* Client peer */
 	uint64_t		rx_us;	/* microsecs when received */
+	uint64_t		cpy_us;	/* microsecs when copy completes */
 	uint64_t		rma_us;	/* microsecs when RMA completes */
 	uint64_t		deq_us;	/* microsecs when dequeued by io */
 	uint64_t		io_us;	/* microsecs when write() completes */
@@ -159,9 +159,9 @@ print_results(peer_t *p)
 
 		memset(buf, 0, len);
 
-		snprintf(buf, len, "len %u rx_us %"PRIu64" rma_us %"PRIu64" "
+		snprintf(buf, len, "len %u rx_us %"PRIu64" cpy_us %"PRIu64" rma_us %"PRIu64" "
 			"deq_us %"PRIu64" io_us %"PRIu64" ", io->len,
-			io->rx_us, io->rma_us, io->deq_us, io->io_us);
+			io->rx_us, io->cpy_us, io->rma_us, io->deq_us, io->io_us);
 
 		newlen = strlen(buf);
 		offset = 0;
@@ -417,6 +417,8 @@ handle_write_req(cci_event_t *event)
 				__func__, cci_strerror(ep, ret));
 	}
 
+	io->cpy_us = get_us();
+
     out:
 	return;
 }
@@ -510,7 +512,7 @@ comm_loop(void)
 	struct pollfd pfd;
 
 	if (blocking) {
-		pfd.fd = *ep_fd;
+		pfd.fd = *osh;
 		pfd.events = POLLIN;
 	}
 
@@ -625,9 +627,9 @@ main(int argc, char *argv[])
 	}
 
 	if (blocking)
-		ep_fd = &cci_fd;
+		osh = &cci_fd;
 
-	ret = cci_create_endpoint(device, 0, &ep, ep_fd);
+	ret = cci_create_endpoint(device, 0, &ep, osh);
 	if (ret) {
 		fprintf(stderr, "cci_create_endpoint() failed with %s\n",
 				cci_strerror(NULL, ret));
