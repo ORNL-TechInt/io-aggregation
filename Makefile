@@ -15,7 +15,7 @@ endif
 
 CC = gcc
 NVCC = $(CUDA_HOME)/bin/nvcc
-CFLAGS = -g -O0 -std=c99 -D_XOPEN_SOURCE=600 -Wall -pedantic -I$(CCI)/include -fPIC
+CFLAGS = -g -O3 -std=c99 -D_XOPEN_SOURCE=600 -Wall -pedantic -I$(CCI)/include -fPIC
 NVCFLAGS = -g -O0 -Xcompiler -std=c99 -D_XOPEN_SOURCE=600 -Xcompiler -Wall -Xcompiler -pedantic -I$(CCI)/include -Xcompiler -fPIC
 LDFLAGS = -dynamic -L$(CCI)/lib -lcci -lpthread -Wl,-rpath,$(CCI)/lib
 NVLDFLAGS = -L$(CCI)/lib -lcci -lpthread -Xlinker -rpath=$(CCI)/lib

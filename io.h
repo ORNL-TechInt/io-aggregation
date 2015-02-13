@@ -13,6 +13,7 @@
 
 typedef enum io_msg_type {
 	CONNECT = 0,	/* C->S: rank */
+	CONNECT_ACK,	/* C<-S: connect ack */
 	WRITE_REQ,	/* C->S: write request - length of write buffer */
 	WRITE_DONE,	/* C<-S: RMA Read is done - client can reuse buffer */
 	BYE,		/* C->S: client done */

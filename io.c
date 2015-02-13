@@ -20,9 +20,12 @@ pid_t pid = -1;
 cci_endpoint_t *endpoint = NULL;
 cci_connection_t *connection = NULL;
 cci_rma_handle_t *local = NULL;
+cci_rma_handle_t handle;
+cci_rma_handle_t *remote = NULL;
 int irank = -1;
 cci_os_handle_t *cfd = NULL, ep_fd;
 struct pollfd pfd;
+int avail = 1;
 
 static void
 handle_sigchld(int sig)
@@ -161,6 +164,7 @@ int io_init(void *buffer, uint32_t len, uint32_t rank, uint32_t ranks,
 
 	do {
 		cci_event_t *event = NULL;
+		io_msg_t *msg = NULL;
 
 		ret = cci_get_event(endpoint, &event);
 		if (!ret) {
@@ -169,6 +173,14 @@ int io_init(void *buffer, uint32_t len, uint32_t rank, uint32_t ranks,
 				connection = event->connect.connection;
 				ready++;
 				break;
+			case CCI_EVENT_RECV:
+				msg = (void *)event->recv.ptr;
+				assert(msg->connect.type == CONNECT_ACK);
+				memcpy((void*)&handle, &msg->connect.handle, sizeof(handle));
+				remote = &handle;
+				fprintf(stderr, "%s: received ack - remote = %p\n", __func__,
+						(void*)remote);
+				break;
 			default:
 				fprintf(stderr, "%s: ignoring %s\n", __func__,
 						cci_event_type_str(event->type));
@@ -176,7 +188,7 @@ int io_init(void *buffer, uint32_t len, uint32_t rank, uint32_t ranks,
 			}
 			cci_return_event(event);
 		}
-	} while (!ready);
+	} while (!ready || remote == NULL);
 
 	if (!connection) {
 		ret = ENOTCONN;
@@ -210,20 +222,58 @@ print_perf(uint32_t len, struct timeval start, struct timeval end)
 	return;
 }
 
+static int
+wait_for_avail(int i)
+{
+	int ret = 0;
+
+	do {
+		cci_event_t *event = NULL;
+
+		if (cfd)
+			poll(&pfd, 1, 0);
+
+		ret = cci_get_event(endpoint, &event);
+		if (!ret) {
+			const io_msg_t *rx = NULL;
+
+			switch (event->type) {
+			case CCI_EVENT_RECV:
+				rx = event->recv.ptr;
+				assert(rx->type == WRITE_DONE);
+				avail = 1;
+				break;
+			default:
+				fprintf(stderr, "%s: ignoring %s\n",
+					__func__, cci_event_type_str(event->type));
+				break;
+			}
+			cci_return_event(event);
+		}
+	} while (!avail);
+
+	return ret;
+}
+
 int io_write(uint32_t len)
 {
 	int ret = 0, done = 0;
 	static int i = 0;
 	io_msg_t msg;
 
+	if (!avail)
+		wait_for_avail(i);
+
 	i++;
 
 	msg.request.type = WRITE_REQ;
 	msg.request.len = len;
 
-	ret = cci_send(connection, &msg, sizeof(msg.request), (void*)(uintptr_t)i, 0);
+	ret = cci_rma(connection, &msg, sizeof(msg.request),
+			local, 0, remote, 0, len,
+			(void*)(uintptr_t)i, CCI_FLAG_WRITE);
 	if (ret) {
-		fprintf(stderr, "%s: cci_send() failed with %s\n",
+		fprintf(stderr, "%s: cci_rma() failed with %s\n",
 				__func__, cci_strerror(endpoint, ret));
 		goto out;
 	}
@@ -241,10 +291,12 @@ int io_write(uint32_t len)
 			switch (event->type) {
 			case CCI_EVENT_SEND:
 				assert(event->send.context == (void*)(uintptr_t)i);
+				done = 1;
 				break;
 			case CCI_EVENT_RECV:
 				rx = event->recv.ptr;
 				assert(rx->type == WRITE_DONE);
+				avail = 1;
 				break;
 			default:
 				fprintf(stderr, "%s: ignoring %s\n",
@@ -252,14 +304,8 @@ int io_write(uint32_t len)
 				break;
 			}
 			cci_return_event(event);
-			done++;
 		}
-	} while (done < 2);
-
-#if 0
-	gettimeofday(&end, NULL);
-	print_perf(len, start, end);
-#endif
+	} while (!done);
 
     out:
 	return ret;
@@ -289,16 +335,18 @@ int io_finalize(void)
 					case CCI_EVENT_SEND:
 						assert(event->send.context ==
 								(void*)(uintptr_t)0xdeadbeef);
+						done++;
 						break;
 					case CCI_EVENT_RECV:
 						rx = event->recv.ptr;
-						assert(rx->type == FINISHED);
+						assert(rx->type == FINISHED || rx->type == WRITE_DONE);
+						if (rx->type == FINISHED)
+							done++;
 						break;
 					default:
 						break;
 					}
 					cci_return_event(event);
-					done++;
 				}
 			} while (done < 2);
 

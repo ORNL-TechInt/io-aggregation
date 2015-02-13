@@ -223,9 +223,11 @@ io(void *arg)
 	pin_to_core(3);
 
 	while (!done) {
+		int ret = 0;
 		io_req_t *io = NULL;
 		peer_t *p = NULL;
 		uint32_t offset = 0;
+		io_msg_t reply;
 
 		pthread_mutex_lock(&lock);
 		if (TAILQ_EMPTY(&reqs)) {
@@ -257,6 +259,15 @@ io(void *arg)
 		}
 
 		io->io_us = get_us();
+
+		memset(&reply, 0, sizeof(reply.done));
+		reply.done.type = WRITE_DONE;
+
+		ret = cci_send(p->conn, &reply, sizeof(reply.done), NULL, 0);
+		if (ret) {
+			fprintf(stderr, "%s: cci_send() failed with %s\n",
+					__func__, cci_strerror(ep, ret));
+		}
 
 		TAILQ_INSERT_TAIL(&p->ios, io, entry);
 
@@ -366,7 +377,9 @@ handle_connect_request(cci_event_t *event)
 static void
 handle_accept(cci_event_t *event)
 {
+	int ret = 0;
 	peer_t *p = event->accept.context;
+	io_msg_t ack;
 
 	p->conn = event->accept.connection;
 
@@ -377,15 +390,24 @@ handle_accept(cci_event_t *event)
 		done = 1;
 	}
 
+	memset(&ack, 0, sizeof(ack));
+	ack.connect.type = CONNECT_ACK;
+	memcpy((void*)&ack.connect.handle, (void*)p->local, sizeof(*p->local));
+
+	ret = cci_send(p->conn, &ack, sizeof(ack.connect), NULL, 0);
+	if (ret) {
+		fprintf(stderr, "%s: failed to send ACK msg to rank %d\n",
+			__func__, p->rank);
+	}
+
 	return;
 }
 
 static void
 handle_write_req(cci_event_t *event)
 {
-	int ret = 0;
 	peer_t *p = event->recv.connection->context;
-	io_msg_t *msg = (void*) event->recv.ptr, reply;
+	io_msg_t *msg = (void*) event->recv.ptr;
 	io_req_t *io = NULL;
 
 	assert(msg);
@@ -406,18 +428,10 @@ handle_write_req(cci_event_t *event)
 	io->rx_us = get_us();
 	io->len = msg->request.len;
 
-	memset(&reply, 0, sizeof(reply.done));
-	reply.done.type = WRITE_DONE;
-	reply.done.cookie = msg->request.cookie;
-
-	ret = cci_rma(p->conn, &reply, sizeof(reply.done), p->local, 0, p->remote, 0,
-			io->len, io, CCI_FLAG_READ);
-	if (ret) {
-		fprintf(stderr, "%s: cci_rma() failed with %s\n",
-				__func__, cci_strerror(ep, ret));
-	}
-
-	io->cpy_us = get_us();
+	pthread_mutex_lock(&lock);
+	TAILQ_INSERT_TAIL(&reqs, io, entry);
+	pthread_cond_signal(&cv);
+	pthread_mutex_unlock(&lock);
 
     out:
 	return;
@@ -461,6 +475,7 @@ handle_recv(cci_event_t *event)
 	return;
 }
 
+#if 0
 static void
 handle_rma(cci_event_t *event)
 {
@@ -474,6 +489,7 @@ handle_rma(cci_event_t *event)
 	pthread_mutex_unlock(&lock);
 
 }
+#endif
 
 static void
 handle_fini(cci_event_t *event)
@@ -497,8 +513,6 @@ handle_send(cci_event_t *event)
 
 	if (ctx == IOD_TX_FINI) {
 		handle_fini(event);
-	} else {
-		handle_rma(event);
 	}
 
 	return;
