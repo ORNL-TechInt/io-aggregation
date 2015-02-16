@@ -264,6 +264,8 @@ int io_write(uint32_t len)
 	if (!avail)
 		wait_for_avail(i);
 
+	avail = 0;
+
 	i++;
 
 	msg.request.type = WRITE_REQ;
