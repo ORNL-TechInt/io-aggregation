@@ -10,7 +10,10 @@ MPICC = $(MPI)/bin/mpicc
 endif
 
 ifndef CUDA_HOME
-$(error Export path to CUDA installation in variable named CUDA_HOME)
+$(warning CUDA_HOME not defined.  Removing gpu_caching_iod target from 'ALL'.)
+$(warning Export path to CUDA installation in variable named CUDA_HOME to enable.)
+else
+GPU_CACHING_IOD=gpu_caching_iod
 endif
 
 CC = gcc
@@ -30,7 +33,7 @@ MPI_TARGETS = test
 CACHING_IOD_OBJS = caching_iod.o
 GPU_CACHING_IOD_OBJS = gpu_caching_iod.o
 
-ALL:$(OBJS) $(C_OBJS) $(MPI_OBJS) $(C_TARGETS) $(MPI_TARGETS) caching_iod gpu_caching_iod
+ALL:$(OBJS) $(C_OBJS) $(MPI_OBJS) $(C_TARGETS) $(MPI_TARGETS) caching_iod $(GPU_CACHING_IOD)
 $(OBJS):%.o:%.c io.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
