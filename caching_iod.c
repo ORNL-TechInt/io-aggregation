@@ -48,6 +48,7 @@ typedef struct peer {
 	uint32_t		buff_used; /* number of bytes in buffer that contain valid
 	                            * data (may be <= len)  Not valid if an RMA
 	                            * is in progress! */
+	/*TODO: doesn't look like we're using buff_used any more... */
 	uint32_t		rank;	/* Peer's MPI rank */
 	int			fd;	/* File for peer */
 	int			done;	/* client sent BYE message */
@@ -67,7 +68,7 @@ typedef struct io_req {
 	uint64_t		deq_us;	/* microsecs when dequeued by io */
 	uint64_t		io_us;	/* microsecs when write() completes */
 	uint32_t		len;	/* Requesting write of len bytes */
-	uint32_t		offset;	/* how may bytes we've RMA'd so far */
+	uint32_t		offset;	/* starting location in the output file for this io's data */
 } io_req_t;
 
 TAILQ_HEAD(irq, io_req)		reqs;	/* List of io_reqs */
@@ -82,10 +83,9 @@ typedef struct cache_block {
 	TAILQ_ENTRY(cache_block)	entry;
 	peer_t			*peer;	/* client peer */
 	io_req_t		*io_req; /* only valid if this is the last cache block for the request */
-	uint64_t		offset; /* offset into the file where we should start writing.
-                             * This is the same as the offset from the start of the request. */
-	/* TODO: I don't think we need this offset value */
-	uint64_t		len;	/* how much data to write */
+	/* Note: no longer using an explicit len member.  The length of the req
+	 * (and therefore the size of the allocated cache) is assumed to be equal
+	 * to io_req->len. */
 	void			*cache;	/* pointer to the cached data. */
 							/* NOTE: in the GPU implementation, this will be a
 							 * pointer to GPU memory! */
@@ -128,8 +128,10 @@ void checkCudaErrImpl(cudaError_t result, char const *const func,
 
 #endif  /* __NVCC__ */
 
-uint64_t min64( uint64_t a, uint64_t b) { return (a < b)?a:b; }
-uint64_t max64( uint64_t a, uint64_t b) { return (a > b)?a:b; }
+/*  Don't actually need these right now...
+static uint64_t min64( uint64_t a, uint64_t b) { return (a < b)?a:b; }
+static uint64_t max64( uint64_t a, uint64_t b) { return (a > b)?a:b; }
+*/
 
 static uint64_t
 get_us(void)
@@ -303,7 +305,6 @@ io(void *arg)
 		cache_block_t * cb = NULL;
 		io_req_t *io_req = NULL;
 		peer_t *p = NULL;
-		uint32_t offset = 0;
 		
 		if (sem_wait( &cache_sem))
 		{
@@ -323,33 +324,37 @@ io(void *arg)
 		pthread_mutex_unlock( &cache_lock);
 		
 		p = cb->peer;
-		if (cb->io_req != NULL) {
-			io_req = cb->io_req;
-			/* This must be the last cache block for this request */
-			io_req->deq_us = get_us();
-		}
-
+		io_req = cb->io_req;
+		io_req->deq_us = get_us();
+		
 #ifdef __NVCC__
 		/* Copy the data out of the GPU memory */
-		checkCudaErrors( cudaMemcpy( bounce_buffer, cb->cache, cb->len, cudaMemcpyDeviceToHost));
+		checkCudaErrors( cudaMemcpy( bounce_buffer, cb->cache, io_req->len, cudaMemcpyDeviceToHost));
 #else
 		bounce_buffer = cb->cache;
 #endif
 		
-		offset = 0;
+		int bytes_written = 0;
+		/*TODO: Try to figure out a way to get rid of this lseek() */
+		int ret = lseek(p->fd, io_req->offset, SEEK_SET);
+		if (ret == (off_t)-1) {
+			fprintf(stderr, "%s: lseek() to offset %u for rank %u "
+					" failed with %s\n", __func__,
+					io_req->offset, p->rank, strerror(errno));
+			assert(0);
+		}
 		do {
-			int ret = write(p->fd,
-					(void*)((uintptr_t)bounce_buffer + offset),
-					cb->len - offset);
+			ret = write(p->fd, (void*)bounce_buffer, io_req->len - bytes_written);
 			if (ret > 0) {
-				offset += ret;
+				bytes_written += ret;
 			} else if (errno != EINTR) {
-				fprintf(stderr, "%s: write() of %lu bytes for rank %u "
-						" failed with %s\n", __func__,
-						cb->len - offset, p->rank, strerror(errno));
+				fprintf(stderr, "%s: write() of %u bytes for rank %u "
+					" failed with %s\n", __func__,
+					io_req->len - bytes_written, p->rank,
+					strerror(errno));
 				assert(0);
 			}
-		} while (offset < cb->len);
+		} while (bytes_written < io_req->len);
 
 		/* Free the cache block */
 #ifdef __NVCC__
@@ -358,18 +363,15 @@ io(void *arg)
 		free( cb->cache);
 #endif
 		pthread_mutex_lock(&cache_lock);
-		cache_size -= cb->len;
+		cache_size -= io_req->len;
 		pthread_mutex_unlock(&cache_lock);
 		free( cb);
 		
-		if (io_req) {
-			/* This is the last cache block for this request.  Update the
-			 * timers and push it on to the completed queue */
-			io_req->io_us = get_us();
+		/* Update the io_req timers and push it on to the completed queue */
+		io_req->io_us = get_us();
 
-			TAILQ_INSERT_TAIL(&p->ios, io_req, entry);
-			p->completed++;
-		}
+		TAILQ_INSERT_TAIL(&p->ios, io_req, entry);
+		p->completed++;
 			
 		pthread_mutex_lock(&p->lock);
 		if (p->done) {
@@ -395,6 +397,9 @@ io(void *arg)
  * These functions are called by the caching thread.
  * They perform the rma(s) for each request and add it to the cache.
  * ****************************************************************** */
+/* Move the data from the peer's buffer into the cache and then cci_send() a
+ * a "DONE" message to the peer knows it can do another RMA */
+/* TODO: Change this function name.  The client handles the RMA's now... */
 static void
 rma_and_cache(io_req_t *io)
 {
@@ -402,109 +407,69 @@ rma_and_cache(io_req_t *io)
 	peer_t *p = io->peer;
 	
 	io_msg_t reply; /* delcared on the stack so I don't have to malloc it */
-	io_msg_t *reply_ptr = NULL;
-	uint32_t reply_size = 0;
-
-
-	if (io->offset == io->len) {
-		io->rma_us = get_us();
-		/* rma_us is the time when the last RMA completes.  If the offset
-		 * equals the length, we've RMA'd everything. */
-		}
-		
-	/* If there's data in the peer's buffer, we need to move
-	 * that to cache before we can initiate another RMA */
-	if (io->offset > 0) { 
-		/* io->offset is the number of bytes that have been RMA'd so far.  If it's 0,
-		 * then nothing's been RMA'd and the buffer is empty.  If it's > 0, then
-		 * copy to cache. */
-		
-		/* Set up the cache block */
-		cache_block_t *cb = (cache_block_t *)malloc( sizeof (*cb));
-		if (!cb) {
-			fprintf(stderr, "%s: unable to allocate cache_block struct for rank %u\n",
-					__func__, p->rank);
-			/* TODO: return error message? */
-			goto out;
-		}
-		cb->peer = p;
-		cb->offset = io->offset - p->buff_used;
-		cb->len = p->buff_used;
-		
-		if (io->offset == io->len) { /* Did we just do the last RMA for this request? */
-			cb->io_req = io;  /* only the last cache block needs to know about the request */
-		} else {
-			cb->io_req = NULL;
-		}
-		
-		/* Make sure we have mem available to allocate for cache */
-		pthread_mutex_lock( &cache_lock);
-		if( (cache_size + cb->len) > MAX_CACHE_SIZE) {
-			fprintf(stderr, "Cache mem full! Waiting for IO thread to drain it.\n");
-		
-			while ( (cache_size + cb->len) > MAX_CACHE_SIZE) {
-			/* Block until the IO thread frees up some cache */
-			pthread_mutex_unlock( &cache_lock);
-			usleep( 5 * 1000 ); /* 5 ms - at 700MB/s it takes 5.7 ms to write a
-			                     * a 4MB block... */
-			pthread_mutex_lock( &cache_lock);
-		}
-		}
+	
+	/* Set up the cache block */
+	cache_block_t *cb = (cache_block_t *)malloc( sizeof (*cb));
+	if (!cb) {
+		fprintf(stderr, "%s: unable to allocate cache_block struct for rank %u\n",
+				__func__, p->rank);
+		/* TODO: return error message? */
+		goto out;
+	}
+	cb->peer = p;
+	cb->io_req = io;
+	
+	/* Make sure we have mem available to allocate for cache */
+	pthread_mutex_lock( &cache_lock);
+	if( (cache_size + io->len) > MAX_CACHE_SIZE) {
+		fprintf(stderr, "Cache mem full! Waiting for IO thread to drain it.\n");
+	
+		while ( (cache_size + io->len) > MAX_CACHE_SIZE) {
+		/* Block until the IO thread frees up some cache */
 		pthread_mutex_unlock( &cache_lock);
-		
-		/* TODO: This malloc (and its corresponding free() ) are pretty inefficient.
-		 * Better to implement some kind of block pool that we can allocate once
-		 * and then use blocks from */
-		/* TODO: For the GPU implementation, we'd use CUDAMalloc() here, and 
-		 * CUDAMemCpy() down below.   Can probably use "#ifdef __NVCC__"*/
-#ifdef __NVCC__
-		checkCudaErrors(cudaMalloc((void **) &cb->cache, cb->len));
-		checkCudaErrors(cudaMemcpy(cb->cache, p->buffer, cb->len, cudaMemcpyHostToDevice));
-#else
-		cb->cache = malloc( cb->len);
-		if (!cb->cache) {
-			fprintf(stderr, "%s: unable to allocate mem for cached data for rank %u\n",
-					__func__, p->rank);
-			/* TODO: return error message? */
-			goto out;
+		usleep( 5 * 1000 ); /* 5 ms - at 700MB/s it takes 5.7 ms to write a
+								* a 4MB block... */
+		pthread_mutex_lock( &cache_lock);
 		}
+	}
+	pthread_mutex_unlock( &cache_lock);
+	
+	/* TODO: This malloc (and its corresponding free() ) are pretty inefficient.
+		* Better to implement some kind of block pool that we can allocate once
+		* and then use blocks from */
+	/* TODO: For the GPU implementation, we'd use CUDAMalloc() here, and 
+		* CUDAMemCpy() down below.   Can probably use "#ifdef __NVCC__"*/
+#ifdef __NVCC__
+	checkCudaErrors(cudaMalloc((void **) &cb->cache, io->len));
+	checkCudaErrors(cudaMemcpy(cb->cache, p->buffer, io->len, cudaMemcpyHostToDevice));
+#else
+	cb->cache = malloc( io->len);
+	if (!cb->cache) {
+		fprintf(stderr, "%s: unable to allocate mem for cached data for rank %u\n",
+				__func__, p->rank);
+		/* TODO: return error message? */
+		goto out;
+	}
 		
-		memcpy( cb->cache, p->buffer, cb->len);
+	memcpy( cb->cache, p->buffer, io->len);
 #endif
 
-		pthread_mutex_lock( &cache_lock);
-		cache_size += cb->len;
-		TAILQ_INSERT_TAIL(&cache_blocks, cb, entry);
-		pthread_mutex_unlock( &cache_lock);
-		sem_post( &cache_sem);  /* wake up the cache thread */
-	}
-		
-	/* Done with copying to cache.  Do we need to issue another RMA? */
-	if (io->offset < io->len) { 
-		/* if this is the last RMA for this request, then send back the completion
-		* message */
-		if ((io->len - io->offset) <= p->len) {
-			memset(&reply, 0, sizeof(reply.done));
-			reply.done.type = WRITE_DONE;
-			reply.done.cookie = io->msg->request.cookie;
-			reply_ptr = &reply;
-			reply_size = sizeof( reply.done);
-	}
+	pthread_mutex_lock( &cache_lock);
+	cache_size += io->len;
+	TAILQ_INSERT_TAIL(&cache_blocks, cb, entry);
+	pthread_mutex_unlock( &cache_lock);
+	sem_post( &cache_sem);  /* wake up the io thread */
 
-		p->buff_used = min64( (io->len - io->offset), p->len);
-		
-		/* We include the io_req struct as the context for the RMA, and we
-		 * want its offset value to reflect the amount of data that's been RMA'd
-		 * after the RMA we're about to issue completes.  */
-		uint32_t rma_start_offset = io->offset;
-		io->offset += p->buff_used;
-		
-		ret = cci_rma(p->conn, reply_ptr, reply_size, p->local, 0, p->remote,
-				rma_start_offset, p->buff_used, io, CCI_FLAG_READ);
-		if (ret) {
-			fprintf(stderr, "%s: cci_rma() failed with %s\n",
-					__func__, cci_strerror(ep, ret));
-		}
+	/* Done with copying to cache.  Send the WRITE_DONE message so the client
+	 * knows it can do another RMA. */
+	
+	memset(&reply, 0, sizeof(reply.done));
+	reply.done.type = WRITE_DONE;
+
+	ret = cci_send(p->conn, &reply, sizeof(reply.done), NULL, 0);
+	if (ret) {
+		fprintf(stderr, "%s: cci_send() failed with %s\n",
+			__func__, cci_strerror(ep, ret));
 	}
 	
 	out:
@@ -583,19 +548,21 @@ handle_connect_request(cci_event_t *event)
 
 	/* The client actually passes to us the size of its RMA buffer, but
 	 * we're going to ignore that and use a small buffer on our side.
-	 * We'll likely have to call cci_rma() multiple times per client
-	 * request. */
+	 * We'll send this value back to the client so it knows how big an
+	 * RMA we can accept.  See handle_accept(). */
 	/* p->len = msg->connect.len; */
 	p->len = RMA_BUF_SIZE;
 	p->rank = msg->connect.rank;
 
-	p->buffer = malloc(p->len);
+	//p->buffer = malloc(p->len);
+	ret = posix_memalign( &p->buffer, sysconf(_SC_PAGESIZE), p->len);
 	if (!p->buffer) {
 		fprintf(stderr, "%s: unable to allocate buffer for rank %u\n",
 			__func__, p->rank);
 		ret = ENOMEM;
 		goto out;
 	}
+	fprintf(stderr, "%s: allocated %zu bytes at %p\n", __func__, (size_t)p->len, p->buffer);
 	
 	i = 0;
 	do {
@@ -641,21 +608,37 @@ handle_connect_request(cci_event_t *event)
 static void
 handle_accept(cci_event_t *event)
 {
+	int ret = 0;
 	peer_t *p = event->accept.context;
+	io_msg_t ack;
 
 	p->conn = event->accept.connection;
-
+	
 	if (!p->conn) {
 		fprintf(stderr, "%s: accept failed for rank %u\n",
 			__func__, p->rank);
 		free_peer(p);
 		done = 1;
 	}
+	
+	memset(&ack, 0, sizeof(ack));
+	ack.connect.type = CONNECT_ACK;
+	ack.connect.len = p->len;  // size of our local RMA buffer
+	memcpy((void*)&ack.connect.handle, (void*)p->local, sizeof(*p->local));
+
+	ret = cci_send(p->conn, &ack, sizeof(ack.connect), NULL, 0);
+	if (ret) {
+		fprintf(stderr, "%s: failed to send ACK msg to rank %d\n",
+			__func__, p->rank);
+	}
 
 	return;
 }
 
-/* Create a new IO request and append it to the request queue */
+/* Calling this a write request is now a bit of a misnomer.  We receive
+ * these messages AFTER the client as RMA'd the data to us.  All we need
+ * to do is copy it into the cache as quickly as possible so that the client
+ * can RMA another block */
 static void
 handle_write_req(cci_event_t *event)
 {
@@ -678,8 +661,9 @@ handle_write_req(cci_event_t *event)
 	io->peer = p;
 	io->msg = msg;
 	io->rx_us = get_us();
+	io->rma_us = get_us();
 	io->len = msg->request.len;
-	io->offset = 0;
+	io->offset = msg->request.offset;
 	
 	pthread_mutex_lock(&reqs_lock);
 	/* Make sure the request queue doesn't grow too large */
@@ -697,7 +681,7 @@ handle_write_req(cci_event_t *event)
 	
 	TAILQ_INSERT_TAIL(&reqs, io, entry);
 	reqs_len++;
-	sem_post( &reqs_sem);
+	sem_post( &reqs_sem);  /* wake up the cache thread */
 	pthread_mutex_unlock(&reqs_lock);
 	
 	out:
@@ -762,32 +746,8 @@ handle_send(cci_event_t *event)
 
 	if (ctx == IOD_TX_FINI) {
 		handle_fini(event);
-	} else {
-		/* ths event means a cci_rma() call has completed and we need
-		 * to signal the caching thread that it can do its memcpy */
-		io_req_t *io = event->send.context;
-		
-		
-		pthread_mutex_lock(&reqs_lock);
-		/* Make sure the request queue doesn't grow too large */
-		if (reqs_len >= MAX_REQS_LEN) {
-			fprintf(stderr, "%s: Cannot add request to queue. (Queue is at max size.) "
-					"Waiting for caching thread to catch up.\n", __func__);
-			
-			while (reqs_len >= MAX_REQS_LEN) {
-				pthread_mutex_unlock(&reqs_lock);
-				usleep( 1);	/* this is damn close to a spinlock, but I need to
-							* the caching thread a chance to acquire the lock */
-				pthread_mutex_lock(&reqs_lock);
-			}
-		}
-		
-		TAILQ_INSERT_TAIL(&reqs, io, entry);
-		reqs_len++;
-		sem_post( &reqs_sem);
-		pthread_mutex_unlock(&reqs_lock);
-	}
-
+	} 
+	
 	return;
 }
 

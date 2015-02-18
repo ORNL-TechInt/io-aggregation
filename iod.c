@@ -392,6 +392,7 @@ handle_accept(cci_event_t *event)
 
 	memset(&ack, 0, sizeof(ack));
 	ack.connect.type = CONNECT_ACK;
+	ack.connect.len = p->len;  // size of our local RMA buffer
 	memcpy((void*)&ack.connect.handle, (void*)p->local, sizeof(*p->local));
 
 	ret = cci_send(p->conn, &ack, sizeof(ack.connect), NULL, 0);

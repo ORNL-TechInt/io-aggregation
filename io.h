@@ -34,6 +34,8 @@ typedef union io_msg {
 	struct io_msg_write_request {
 		io_msg_type_t type;	/* WRITE_REQ */
 		uint32_t len;		/* Length of write */
+		uint64_t offset;	/* Where in the output file this particular
+							 * data belongs */
 		uint64_t cookie;	/* IO request opaque pointer */
 	} request;
 

@@ -27,6 +27,16 @@ cci_os_handle_t *cfd = NULL, ep_fd;
 struct pollfd pfd;
 int avail = 1;
 
+uint32_t max_rma_len = 0;  // Maximum size we can send in one RMA call
+
+static uint32_t min32( uint32_t a, uint32_t b) { return (a < b)?a:b; }
+
+/* Don't need these yet...
+static uint64_t min64( uint64_t a, uint64_t b) { return (a < b)?a:b; }
+static uint32_t max32( uint32_t a, uint32_t b) { return (a > b)?a:b; }
+static uint64_t max64( uint64_t a, uint64_t b) { return (a > b)?a:b; }
+*/
+
 static void
 handle_sigchld(int sig)
 {
@@ -176,6 +186,7 @@ int io_init(void *buffer, uint32_t len, uint32_t rank, uint32_t ranks,
 			case CCI_EVENT_RECV:
 				msg = (void *)event->recv.ptr;
 				assert(msg->connect.type == CONNECT_ACK);
+				max_rma_len = msg->connect.len;
 				memcpy((void*)&handle, &msg->connect.handle, sizeof(handle));
 				remote = &handle;
 				fprintf(stderr, "%s: received ack - remote = %p\n", __func__,
@@ -260,54 +271,63 @@ int io_write(uint32_t len)
 	int ret = 0, done = 0;
 	static int i = 0;
 	io_msg_t msg;
+	uint32_t bytes_transferred = 0;
+	
+	while (bytes_transferred < len)
+	{
+		if (!avail)
+			wait_for_avail(i);
 
-	if (!avail)
-		wait_for_avail(i);
+		avail = 0;
 
-	avail = 0;
+		i++;
 
-	i++;
+		uint32_t bytes_remaining = len - bytes_transferred;
+		uint32_t bytes_to_send = min32(bytes_remaining, max_rma_len);
+		msg.request.type = WRITE_REQ;
+		msg.request.len = bytes_to_send;
+		msg.request.offset = bytes_transferred;
 
-	msg.request.type = WRITE_REQ;
-	msg.request.len = len;
-
-	ret = cci_rma(connection, &msg, sizeof(msg.request),
-			local, 0, remote, 0, len,
-			(void*)(uintptr_t)i, CCI_FLAG_WRITE);
-	if (ret) {
-		fprintf(stderr, "%s: cci_rma() failed with %s\n",
-				__func__, cci_strerror(endpoint, ret));
-		goto out;
-	}
-
-	do {
-		cci_event_t *event = NULL;
-
-		if (cfd)
-			poll(&pfd, 1, 0);
-
-		ret = cci_get_event(endpoint, &event);
-		if (!ret) {
-			const io_msg_t *rx = NULL;
-
-			switch (event->type) {
-			case CCI_EVENT_SEND:
-				assert(event->send.context == (void*)(uintptr_t)i);
-				done = 1;
-				break;
-			case CCI_EVENT_RECV:
-				rx = event->recv.ptr;
-				assert(rx->type == WRITE_DONE);
-				avail = 1;
-				break;
-			default:
-				fprintf(stderr, "%s: ignoring %s\n",
-					__func__, cci_event_type_str(event->type));
-				break;
-			}
-			cci_return_event(event);
+		ret = cci_rma(connection, &msg, sizeof(msg.request),
+				local, bytes_transferred, remote, 0, bytes_to_send,
+				(void*)(uintptr_t)i, CCI_FLAG_WRITE);
+		if (ret) {
+			fprintf(stderr, "%s: cci_rma() failed with %s\n",
+					__func__, cci_strerror(endpoint, ret));
+			goto out;
 		}
-	} while (!done);
+		
+		bytes_transferred += bytes_to_send;
+
+		do {
+			cci_event_t *event = NULL;
+
+			if (cfd)
+				poll(&pfd, 1, 0);
+
+			ret = cci_get_event(endpoint, &event);
+			if (!ret) {
+				const io_msg_t *rx = NULL;
+
+				switch (event->type) {
+				case CCI_EVENT_SEND:
+					assert(event->send.context == (void*)(uintptr_t)i);
+					done = 1;
+					break;
+				case CCI_EVENT_RECV:
+					rx = event->recv.ptr;
+					assert(rx->type == WRITE_DONE);
+					avail = 1;
+					break;
+				default:
+					fprintf(stderr, "%s: ignoring %s\n",
+						__func__, cci_event_type_str(event->type));
+					break;
+				}
+				cci_return_event(event);
+			}
+		} while (!done);
+	}
 
     out:
 	return ret;
