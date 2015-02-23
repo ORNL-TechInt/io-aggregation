@@ -96,6 +96,7 @@ sem_t							cache_sem;
 uint64_t						cache_size; /* keep track of how much memory
                                              * we've allocated to cache */
 #define MAX_CACHE_SIZE			(2L * 1024 * 1024 * 1024) /* 2GB */
+//#define MAX_CACHE_SIZE			(5L * 1024 * 1024 * 1024) /* 5GB - for Titan */
 /* TODO: This needs to be a command line parameter! */
 
 
@@ -179,11 +180,18 @@ print_results(peer_t *p)
 {
 	int ret = 0;
 	io_msg_t msg;
-	char *buf = NULL;
+	char *buf = NULL, name[32];
 	size_t len = p->completed * 4 * 32, offset = 0, newlen = 0;
 
-	ftruncate(p->fd, 0);
-	lseek(p->fd, 0, SEEK_SET);
+	memset(name, 0, sizeof(name));
+	snprintf(name, sizeof(name), "rank-%u-iod", p->rank);
+
+	p->fd = open(name, O_RDWR|O_CREAT, 0644);
+	if (p->fd == -1) {
+		fprintf(stderr, "%s: open(%s) failed with %s\n", __func__, name,
+				strerror(errno));
+		return;
+	}
 
 	/* allocate buffer - reserve for 4 uint64_t (which use a max of 20 chars)
 	 * for each completed IO request.
@@ -582,7 +590,7 @@ handle_connect_request(cci_event_t *event)
 	pthread_mutex_init(&p->lock, NULL);
 
 	memset(name, 0, sizeof(name));
-	snprintf(name, sizeof(name), "rank-%u-iod", p->rank);
+	snprintf(name, sizeof(name), "rank-%u-iod-data", p->rank);
 
 	p->fd = open(name, O_RDWR|O_CREAT, 0644);
 	if (p->fd == -1) {
