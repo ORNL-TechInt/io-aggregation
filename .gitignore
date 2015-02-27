@@ -1,4 +1,3 @@
-*.o
 iod
 caching_iod
-test
+new_test

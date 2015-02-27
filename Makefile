@@ -6,7 +6,7 @@ ifndef MPICC
 ifndef MPI
 $(error Export path to MPI in variable named MPI)
 endif
-MPICC = $(MPI)/bin/mpicc
+MPICC = $(MPI)/bin/mpic++
 endif
 
 ifndef CUDA_HOME
@@ -16,50 +16,44 @@ else
 GPU_CACHING_IOD=gpu_caching_iod
 endif
 
-CC = gcc
+#CC = g++ # use MPICC instead...
+
+VPATH = common_src:client_src:daemon_src
+
 NVCC = $(CUDA_HOME)/bin/nvcc
-CFLAGS = -g -O0 -std=c99 -D_XOPEN_SOURCE=600 -Wall -pedantic -I$(CCI)/include -fPIC
-NVCFLAGS = -g -O0 -Xcompiler -std=c99 -D_XOPEN_SOURCE=600 -Xcompiler -Wall -Xcompiler -pedantic -I$(CCI)/include -Xcompiler -fPIC
+CFLAGS = -g -O0 -D_XOPEN_SOURCE=600 -std=c++0x -Wall -pedantic -I./common_src -I$(CCI)/include
+NVCFLAGS = -g -O0 -D_XOPEN_SOURCE=600 -Xcompiler -std=c++0x -Xcompiler -Wall -Xcompiler -pedantic -I./common_src -I$(CCI)/include -Xcompiler -fPIC
+
 LDFLAGS = -dynamic -L$(CCI)/lib -lcci -lpthread -Wl,-rpath,$(CCI)/lib
 NVLDFLAGS = -L$(CCI)/lib -lcci -lpthread -Xlinker -rpath=$(CCI)/lib
-OBJS = io.o
 
-C_OBJS = iod.o
-C_TARGETS = iod
 
-MPI_OBJS = test.o
-MPI_TARGETS = test
+DAEMON_DEPS = cci_msg.h cci_util.h daemoncmdlineopts.h
+DAEMON_SRC = cci_util.cpp daemon.cpp daemoncmdlineopts.cpp
 
-CACHING_IOD_OBJS = caching_iod.o
-GPU_CACHING_IOD_OBJS = gpu_caching_iod.o
+NEW_TEST_DEPS = cci_msg.h cci_util.h cmdlineopts.h utils.h
+NEW_TEST_SRC = cci_util.cpp new_test.cpp utils.cpp cmdlineopts.cpp
 
-ALL:$(OBJS) $(C_OBJS) $(MPI_OBJS) $(C_TARGETS) $(MPI_TARGETS) caching_iod $(GPU_CACHING_IOD)
-$(OBJS):%.o:%.c io.h
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
-$(C_OBJS):%.o:%.c io.h
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
-$(MPI_OBJS):%.o:%.c io.h
-	$(MPICC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
-$(CACHING_IOD_OBJS):%.o:%.c io.h
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
+NEW_TEST_OBJS = $(patsubst %.cpp,obj/new_test/%.o,$(NEW_TEST_SRC))
+DAEMON_OBJS = $(patsubst %.cpp,obj/daemon/%.o,$(DAEMON_SRC))
 
-$(GPU_CACHING_IOD_OBJS):gpu_%.o:%.c io.h
-	$(NVCC) $(NVCFLAGS) $(CPPFLAGS) -c $< -o $@
 
-$(C_TARGETS):$(C_OBJS) $(OBJS)
-	$(CC) $(OBJS) $(C_OBJS) $(LDFLAGS) -o $@
+ALL: new_test daemon
 
-$(MPI_TARGETS):$(MPI_OBJS) $(OBJS)
-	$(MPICC) $(OBJS) $(MPI_OBJS) $(LDFLAGS) -o $@
+new_test: $(NEW_TEST_OBJS)
+	$(MPICC) -o $@ $^ $(LDFLAGS)
 
-caching_iod: $(CACHING_IOD_OBJS) $(OBJS)
-	$(CC) $(OBJS) $(CACHING_IOD_OBJS) $(LDFLAGS) -o $@
+daemon: $(DAEMON_OBJS)
+	$(MPICC) -o $@ $^ $(LDFLAGS)
 
-gpu_caching_iod: $(GPU_CACHING_IOD_OBJS) $(OBJS)
-	$(NVCC) $(OBJS) $(GPU_CACHING_IOD_OBJS) $(NVLDFLAGS) -o $@
+$(NEW_TEST_OBJS):obj/new_test/%.o: %.cpp $(NEW_TEST_DEPS)
+	$(MPICC) -c -o $@ $< $(CFLAGS)
+
+$(DAEMON_OBJS):obj/daemon/%.o: %.cpp $(DAEMON_DEPS)
+	$(MPICC) -c -o $@ $< $(CFLAGS)
 
 clean:
-	rm -rf $(C_TARGETS) $(MPI_TARGETS) caching_iod gpu_caching_iod $(C_OBJS) $(MPI_OBJS) $(CACHING_IOD_OBJS) $(GPU_CACHING_IOD_OBJS) $(OBJS) *.dSYM
+	rm -f new_test $(NEW_TEST_OBJS) daemon $(DAEMON_OBJS) *.dSYM
