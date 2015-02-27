@@ -7,6 +7,7 @@
 #include "cacheblock.h"
 #include "daemoncmdlineopts.h"
 #include "iorequest.h"
+#include "peer.h"
 
 #include <cci.h>
 #include <pthread.h>
@@ -17,8 +18,8 @@
 #include <deque>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <sstream>
-#include <vector>
 using namespace std;
 
 
@@ -46,6 +47,9 @@ static int cciSetup( char **uri);
 // write the results for each rank
 static void printResults();
 
+// Handle all the CCI events
+static void commLoop();
+
 // thread function for copying data out of cache and writing it to disk
 void *writeThread( void *);
 sem_t writeThreadSem;  // the write thread will wait on this.  Every
@@ -61,38 +65,12 @@ struct cci_rma_handle localRmaHandle;
 // const and we have no initializer
                                     
                                     
-                                    
-                                                                       
-struct Peer {
-    cci_connection_t    *conn; // CCI connection
-//    void    *buffer;
-    
-//    cci_rma_handle_t    *remote; /* Their CCI RMA handle */
-// don't think we need this - client will initiate RMA's
 
-//    uint32_t    requests; /* Number of requests received */
-//    uint32_t    completed; /* Number of completed requests on ios list */
-// These 2 are handled the size() function on the vectors
-
-    vector <IoRequest> receivedReqs;
-    vector <IoRequest> completedReqs;
-    // TODO: should these be maps instead?
-    // TODO: Should these be containers of pointers, rather than actual structs?
-    //       Would make it easier to associate cache blocks...
-    
-//    uint32_t    len; /* RMA buffer length */
-    uint32_t    rank; // Peer's MPI rank
-    int fd; // File for peer
-    // FUTURE:  For the "real" version, we'll want clients to be able
-    // to specify the file descriptor per request, so this value will
-    // have to move to the IoRequest struc.  We'll also need open & 
-    // close message so the clients can tell the daemon which files to
-    // write to.
-    int done; // client sent BYE message
-    pthread_mutex_t lock; // Lock to protect everything in this struct
-};
-
-vector <Peer> peerList;
+map <unsigned, Peer *> peerList;
+// Keep track of our connections.  The key is the client's MPI rank
+// NOTE: Container of pointers! Don't forget to delete the object when
+// you remove it from the container!
+// TODO: do we need a mutex for this??
 
 // Two lists of cache blocks - the first is for blocks that have been allocated
 // and clients are in the process of copying data to.  The second is for blocks
@@ -205,10 +183,10 @@ int main(int argc, char *argv[])
     //pin_to_core(1);
 
     // Handle all the CCI events...
-    //comm_loop();
-
+    commLoop();
     
-    // Time to quit
+    // If we've returned from commLoop(), then it's time to shut down
+
     shuttingDown = true;
     sem_post( &writeThreadSem);  // wake up the thread so it sees the shutdown flag
     
@@ -218,7 +196,7 @@ int main(int argc, char *argv[])
     }
 
     // Write out the stats for the completed I/O requests
-    
+    printResults();
     
     out:
     
@@ -310,6 +288,16 @@ static int cciSetup( char **uri)
         }
     }
     
+    
+#if 0
+TODO: uncomment this once we have set up buffer & len
+    ret = cci_rma_register(endpoint, buffer, len, CCI_FLAG_READ, &localRmaHandle);
+    if (ret) {
+        cciDbgMsg( "cci_rma_register()", ret);
+        goto out;
+    }
+#endif
+    
 out:
     return ret;
 }
@@ -361,7 +349,90 @@ void *writeThread( void *)
     return NULL;
 }
 
+// Specific event handlers...
+static void handle_connect_request( cci_event_t * event)
+{
+    int ret = 0;
+    IoMsg *msg = (IoMsg *) event->request.data_ptr;
+    Peer *peer = NULL;
 
+    if (event->request.data_len != sizeof(msg->connect)) {
+        cerr << __func__ << "%s: expected " << sizeof(msg->connect)
+             << " bytes but received " << event->request.data_len
+             << " bytes" << endl;
+        ret = EINVAL;
+        goto out;
+    }
+    
+    peer = new Peer( msg->connect.rank);
+
+    ret = cci_accept(event, peer);
+    if (ret) {
+        cciDbgMsg( "cci_accept()", ret);
+        goto out;
+    }
+
+    peerList[peer->rank] = peer;
+
+    out:
+    if (ret)
+        delete peer;
+    
+    return;
+}
+
+static void handle_accept( cci_event_t * event)
+{
+    
+}
+static void handle_recv( cci_event_t * event)
+{
+}
+static void handle_send( cci_event_t * event)
+{
+}
+
+// Handle all the CCI events
+static void commLoop()
+{
+    int ret = 0;
+    cci_event_t *event = NULL;
+        
+    while (!shuttingDown) {
+        ret = cci_get_event(endpoint, &event);
+        if (ret) { 
+            if (ret != CCI_EAGAIN) {
+                cciDbgMsg( "cci_get_event()", ret);
+            }
+            continue;
+        }
+                
+        /* handle event */
+        
+        switch (event->type) {
+            case CCI_EVENT_CONNECT_REQUEST:
+                handle_connect_request(event);
+                break;
+            case CCI_EVENT_ACCEPT:
+                handle_accept(event);
+                break;
+            case CCI_EVENT_RECV:
+                handle_recv(event);
+                break;
+            case CCI_EVENT_SEND:
+                handle_send(event);
+                break;
+            default:
+                cerr << __func__ << ": ignoring "
+                     << cci_event_type_str(event->type) << endl;
+                break;
+        }
+        
+        cci_return_event(event);
+    }
+        
+    return;
+}
 
 static void printResults()
 {
@@ -370,12 +441,12 @@ static void printResults()
     
     // Each peer gets its own output file
     for (unsigned i=0; i < peerList.size(); i++) {
-        ostringstream fname("rank-");
-        fname << peerList[i].rank << "-iod";
+        ostringstream fname("");
+        fname << "rank-" << peerList[i]->rank << "-iod";
         out.open( fname.str().c_str());
         if (! out) {
             cerr << "Failed to open " << fname.str()
-                 << ".  Skipping results for rank " << peerList[i].rank
+                 << ".  Skipping results for rank " << peerList[i]->rank
                  << endl;
             continue;
         }
@@ -385,14 +456,14 @@ static void printResults()
         out << "daemon" << endl;
         
         // Second line is some overall stats for this rank
-        out << "rank " << peerList[i].rank
-            << " num_requests " << peerList[i].completedReqs.size()
+        out << "rank " << peerList[i]->rank
+            << " num_requests " << peerList[i]->completedReqs.size()
             << " max_len " << "?????" << endl;
             // TODO: implement the max length stuff
         
         // one line for each completed request
-        for (unsigned j=0; j < peerList[i].completedReqs.size(); j++) {
-            peerList[i].completedReqs[j].writeResults( out);
+        for (unsigned j=0; j < peerList[i]->completedReqs.size(); j++) {
+            peerList[i]->completedReqs[j].writeResults( out);
         }
         
         out.close();
@@ -400,9 +471,6 @@ static void printResults()
         
     return;
 }
-
-
-
 
 
 

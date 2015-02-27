@@ -28,8 +28,8 @@ LDFLAGS = -dynamic -L$(CCI)/lib -lcci -lpthread -Wl,-rpath,$(CCI)/lib
 NVLDFLAGS = -L$(CCI)/lib -lcci -lpthread -Xlinker -rpath=$(CCI)/lib
 
 
-DAEMON_DEPS = cacheblock.h cci_msg.h cci_util.h daemoncmdlineopts.h iorequest.h timing.h
-DAEMON_SRC = cci_util.cpp daemon.cpp daemoncmdlineopts.cpp iorequest.cpp
+DAEMON_DEPS = cacheblock.h cci_msg.h cci_util.h daemoncmdlineopts.h iorequest.h peer.h timing.h
+DAEMON_SRC = cci_util.cpp daemon.cpp daemoncmdlineopts.cpp iorequest.cpp peer.cpp
 
 NEW_TEST_DEPS = cci_msg.h cci_util.h cmdlineopts.h timing.h utils.h
 NEW_TEST_SRC = cci_util.cpp new_test.cpp utils.cpp cmdlineopts.cpp
