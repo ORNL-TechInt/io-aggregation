@@ -324,11 +324,11 @@ void *writeThread( void *)
             // No big deal (seems to happen inside the debugger
             // fairly often).  Go back to sleep.
             continue;
+            } else {  // log the error (should never happen)
+                int err = errno;
+                cerr << __func__ << "semaphore error " << err << ": "
+                    << strerror( err) << endl;   
             }
-        } else {  // log the error (should never happen)
-            int err = errno;
-            cerr << __func__ << "semaphore error " << err << ": "
-                 << strerror( err) << endl;
         }
         
         // Time to exit?
