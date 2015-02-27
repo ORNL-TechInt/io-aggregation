@@ -15,9 +15,10 @@
 #define NULL_IO     false       // use null io option
 #define CLIENT_BLOCKING false   // use CCI blocking mode on the client
 #define DAEMON_BLOCKING false   // use CCI blocking mode on the server
+#define USE_DAEMON  false       // whether or not to hand writes off to the daemon process
 struct CommandLineOptions {
 
-    int iters;
+    unsigned iters;
     int sleepSecs;
     size_t minLen;
     size_t maxLen;
@@ -26,12 +27,14 @@ struct CommandLineOptions {
     bool clientBlocking;
     bool daemonBlocking;
     size_t rmaBuf;  // in megabytes
+    bool useDaemon;
     
     
     CommandLineOptions() :
      iters(ITERS), sleepSecs(SLEEP_SECS), minLen(MIN_LENGTH), maxLen(MAX_LENGTH),
      extraRam(EXTRA_RAM), nullIo(NULL_IO), clientBlocking(CLIENT_BLOCKING),
-     daemonBlocking(DAEMON_BLOCKING), rmaBuf(MAX_LENGTH / (1024*1024))  { }
+     daemonBlocking(DAEMON_BLOCKING), rmaBuf(MAX_LENGTH / (1024*1024)),
+     useDaemon( USE_DAEMON) { }
     
 };
 

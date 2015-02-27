@@ -4,15 +4,20 @@
 
 #include "cci_msg.h"  // client/daemon message definitions
 #include "cci_util.h"
+#include "cacheblock.h"
 #include "daemoncmdlineopts.h"
+#include "iorequest.h"
 
 #include <cci.h>
 #include <pthread.h>
+#include <semaphore.h>
 #include <string.h>
 #include <unistd.h>
 
+#include <deque>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <vector>
 using namespace std;
 
@@ -36,8 +41,16 @@ using namespace std;
 // Returns a cci_status
 // If uri is non-null, a pointer to the char string for the selected URI
 // will be written to it.
-int cciSetup( char **uri);
+static int cciSetup( char **uri);
 
+// write the results for each rank
+static void printResults();
+
+// thread function for copying data out of cache and writing it to disk
+void *writeThread( void *);
+sem_t writeThreadSem;  // the write thread will wait on this.  Every
+                       // we move a block from the incoming list to the
+                       // ready list (see below) we'll post it.
 
 cci_endpoint_t *endpoint = NULL;
 cci_os_handle_t *endpointFd = NULL; // file descriptor that can block waiting for
@@ -49,9 +62,7 @@ struct cci_rma_handle localRmaHandle;
                                     
                                     
                                     
-                                    
-struct IoRequest;
-                                    
+                                                                       
 struct Peer {
     cci_connection_t    *conn; // CCI connection
 //    void    *buffer;
@@ -81,45 +92,21 @@ struct Peer {
     pthread_mutex_t lock; // Lock to protect everything in this struct
 };
 
-
-
-// TODO: should IoRequest be ref-counted?
-struct IoRequest {
-    Peer *      peer; /* Client peer */
-    uint64_t    rx_us; /* microsecs when received */
-    uint64_t    cpy_us; /* microsecs when copy completes */
-    uint64_t    rma_us; /* microsecs when RMA completes */
-    uint64_t    deq_us; /* microsecs when dequeued by io */
-    uint64_t    io_us; /* microsecs when write() completes */
-    uint32_t    len; /* Requesting write of len bytes */
-};
-
-
-class CacheBlock {
-    
-protected:
-    IoRequest *req;  // cache blocks are all associated with a request
-                     // (more than 1 cache block may be associated with the
-                     // same request)
-    
-};
-
-class SysRamCacheBlock : public CacheBlock {
-
-    
-};
-
-class GPURamCacheBlock : public CacheBlock {
-};
-
-vector <CacheBlock *> blockList;
-// vector of pointers! Don't forget to call delete after popping one off the list
-
 vector <Peer> peerList;
-                                    
-                                    
-                                    
-                                    
+
+// Two lists of cache blocks - the first is for blocks that have been allocated
+// and clients are in the process of copying data to.  The second is for blocks
+// whose the clients have finished their copy and can now be written to disk
+deque <CacheBlock *> incomingBlockList;
+deque <CacheBlock *> readyBlockList;
+// NOTE: containers of pointers! Don't forget to call delete after popping
+// one off the list
+pthread_mutex_t blockListMut; // Protect access to the 2 block lists
+
+
+// Set to true by the main thread to indicate that background thread(s)
+// need to exit
+bool shuttingDown = false;
 
 int main(int argc, char *argv[])
 {
@@ -133,7 +120,7 @@ int main(int argc, char *argv[])
  
     char *uri = NULL;
     char hostname[64], uriFileName[128];
-    //pthread_t tid;
+    pthread_t tid;  // thread ID for the write thread
 
     CommandLineOptions cmdOpts;
     
@@ -198,29 +185,45 @@ int main(int argc, char *argv[])
             maxGpuRam = cmdOpts.maxGpuRam * 1024 * 1024;
         }   
     }
+ 
     
-#if 0
-    pin_to_core(1);
-
-    TAILQ_INIT(&reqs);
-    pthread_cond_init(&cv, NULL);
-    pthread_mutex_init(&lock, NULL);
-
-    ret = pthread_create(&tid, NULL, io, NULL);
+    ret = pthread_mutex_init(&blockListMut, NULL);
+ 
+    ret = sem_init( &writeThreadSem, 0, 0);
     if (ret) {
-        fprintf(stderr, "pthread_create() failed with %s\n", strerror(ret));
+        cerr << "sem_init() failed with " << strerror(ret) << endl;;
         goto out;
     }
+    
+    ret = pthread_create(&tid, NULL, writeThread, NULL);
+    if (ret) {
+        cerr << "pthread_create() failed with " << strerror(ret) << endl;;
+        goto out;
+    }
+ 
+    
+    //pin_to_core(1);
 
-    comm_loop();
+    // Handle all the CCI events...
+    //comm_loop();
 
+    
+    // Time to quit
+    shuttingDown = true;
+    sem_post( &writeThreadSem);  // wake up the thread so it sees the shutdown flag
+    
     ret = pthread_join(tid, NULL);
     if (ret) {
-        fprintf(stderr, "pthread_join() failed with %s\n", strerror(ret));
+        cerr << "pthread_join() failed with " << strerror(ret) << endl;
     }
-#endif
 
+    // Write out the stats for the completed I/O requests
+    
+    
     out:
+    
+    pthread_mutex_destroy(&blockListMut);
+    sem_destroy( &writeThreadSem);
     
     // Remove the 'hostname'-iod file
     ret = unlink(uriFileName);
@@ -252,7 +255,7 @@ int main(int argc, char *argv[])
 // Returns a cci_status or a negated errno
 // If uri is non-null, a pointer to the char string for the selected URI
 // will be written to it.
-int cciSetup( char **uri)
+static int cciSetup( char **uri)
 {
     int ret;
     uint32_t caps = 0;
@@ -310,3 +313,96 @@ int cciSetup( char **uri)
 out:
     return ret;
 }
+
+
+// thread function for copying data out of cache and writing it to disk
+void *writeThread( void *)
+{
+    while (!shuttingDown) {
+        if (sem_wait( &writeThreadSem)) {
+            if (errno == EINTR) {
+            // No big deal (seems to happen inside the debugger
+            // fairly often).  Go back to sleep.
+            continue;
+            }
+        } else {  // log the error (should never happen)
+            int err = errno;
+            cerr << __func__ << "semaphore error " << err << ": "
+                 << strerror( err) << endl;
+        }
+        
+        // Time to exit?
+        if (shuttingDown){
+            continue;
+        }
+        
+        // lock the mutex, pop the first block off the ready list and then
+        // release the mutex
+        CacheBlock *cb;
+        pthread_mutex_lock( &blockListMut);
+        if (readyBlockList.size() > 0) {
+            cb = readyBlockList.front();
+            readyBlockList.pop_front();
+        } else {
+            // The only reason I can think of that the list would be empty
+            // is if the sem_wait() returned an error...
+            cerr << __func__
+                 << ": empty readyBlockList.  Why did the thread wake up??"
+                 << endl;
+        }
+        pthread_mutex_unlock( &blockListMut);
+
+        
+        //cb->write(); TODO: Implement!!
+        delete cb;
+    }
+        
+        
+    return NULL;
+}
+
+
+
+static void printResults()
+{
+    
+    ofstream out;
+    
+    // Each peer gets its own output file
+    for (unsigned i=0; i < peerList.size(); i++) {
+        ostringstream fname("rank-");
+        fname << peerList[i].rank << "-iod";
+        out.open( fname.str().c_str());
+        if (! out) {
+            cerr << "Failed to open " << fname.str()
+                 << ".  Skipping results for rank " << peerList[i].rank
+                 << endl;
+            continue;
+        }
+        
+        // First line is the name of the program that wrote the file
+        // (This is a leftover from when we had different executables.)
+        out << "daemon" << endl;
+        
+        // Second line is some overall stats for this rank
+        out << "rank " << peerList[i].rank
+            << " num_requests " << peerList[i].completedReqs.size()
+            << " max_len " << "?????" << endl;
+            // TODO: implement the max length stuff
+        
+        // one line for each completed request
+        for (unsigned j=0; j < peerList[i].completedReqs.size(); j++) {
+            peerList[i].completedReqs[j].writeResults( out);
+        }
+        
+        out.close();
+    }
+        
+    return;
+}
+
+
+
+
+
+

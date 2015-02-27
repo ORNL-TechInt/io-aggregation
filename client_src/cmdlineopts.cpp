@@ -19,6 +19,7 @@ static struct option long_options[] = {
     {"null_io",          no_argument,       0, 'n'},
     {"extra_ram",        required_argument, 0, 'e'},
     {"rma_buf",          required_argument, 0, 'r'},
+    {"use_daemon",       no_argument,       0, 'd'},
     {0, 0, 0, 0} };
 
 
@@ -28,7 +29,7 @@ bool parseCmdLine( int argc, char **argv, CommandLineOptions &opts)
     {
         /* getopt_long stores the option index here. */
         int option_index = 0;
-        int c = getopt_long( argc, argv, "i:s:m:M:bBne:r:", long_options, &option_index);
+        int c = getopt_long( argc, argv, "i:s:m:M:bBne:r:d", long_options, &option_index);
 
         /* Detect the end of the options. */
         if (c == -1)
@@ -64,7 +65,10 @@ bool parseCmdLine( int argc, char **argv, CommandLineOptions &opts)
             case 'r':
                 opts.rmaBuf = atoi(optarg);
                 break;
-
+            case 'd':
+                opts.useDaemon = true;
+                break;
+                
             default:  // unrecognized option
                 return false;
                 
@@ -91,6 +95,7 @@ void printUsage(char *name)
          << "In MB (default " << MAX_LENGTH / (1024*1024) << ")" << endl;
     cerr << "\t-e\tAllocate extra memory. In MB (default " << EXTRA_RAM << ")" << endl;
     
+    cerr << "\t-d\tSend writes over to the remote daemon" << endl;
     cerr << "\t-b\tUse CCI blocking mode on client" << endl;
     cerr << "\t-B\tUse CCI blocking mode on iod daemon" << endl;
     cerr << "\t-N\tUse NULL IO on iod daemon" << endl;
