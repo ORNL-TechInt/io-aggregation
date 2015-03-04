@@ -33,8 +33,6 @@ struct TimeStamp {
 
 
 static void initBuffer(void *buf, size_t len, unsigned seed);
-static void writeLocal(void *buf, streamsize len, ofstream &outf);
-//static void writeRemote(void *buf, size_t len, cci_connection_t *connection);
 
 int main( int argc, char **argv)
 {
@@ -78,8 +76,8 @@ int main( int argc, char **argv)
         daemonArgs[0] = (char *)"daemon";
         daemonArgs[1] = NULL;
         
-        int rc = initIo(buf, cmdOpts.maxLen, rank, ranks, daemonArgs);
-        if (!rc) {
+        int rc = initIo(buf, cmdOpts.maxLen, rank, daemonArgs);
+        if (rc) {
             if (rc > 0) {
                 cerr << "CCI error during initialization: " 
                     << cci_strerror( NULL,(cci_status)rc) << endl;
@@ -115,7 +113,7 @@ int main( int argc, char **argv)
 
             ts.start_us = getUs();
             if (cmdOpts.useDaemon) {
-                // TODO: Call writeRemote()
+                writeRemote(buf, len);
             } else {
                 writeLocal(buf, len, outf);
             }
@@ -185,18 +183,3 @@ static void initBuffer(void *buf, size_t len, unsigned seed)
 
 
 
-static void writeLocal(void *buf, streamsize len, ofstream &outf)
-{
-    outf.seekp( 0);
-    outf.write( (const char *)buf, len);
-}
-
-
-#if 0
-
-static void writeRemote(void *buf, size_t len, cci_connection_t *connection)
-{
-    // TODO: Implement me!
-}
-
-#endif

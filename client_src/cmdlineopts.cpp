@@ -82,7 +82,7 @@ bool parseCmdLine( int argc, char **argv, CommandLineOptions &opts)
 void printUsage(char *name)
 {
     cerr <<  "Usage: " << name << " [-i <iterations>] [-s <sleep_seconds>] "
-         << "[-m <min_length>] [-M <max_length>] [-a | -c | -g] [-r] "
+         << "[-m <min_length>] [-M <max_length>] [-d] [-r] "
          << "[-e <megabytes>]" << endl;
 
     cerr << "where:" << endl;

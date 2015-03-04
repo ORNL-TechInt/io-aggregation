@@ -18,6 +18,19 @@
 #include <fstream>
 using namespace std;
 
+#include <cuda_runtime.h>
+#include <cuda.h>
+
+// This macro checks return value of the CUDA runtime call and exits
+// the application if the call failed.
+#define CUDA_CHECK_RETURN(value) {                                          \
+    cudaError_t _m_cudaStat = value;                                        \
+    if (_m_cudaStat != cudaSuccess) {                                       \
+        fprintf(stderr, "Error %d - %s - at line %d in file %s\n",          \
+        _m_cudaStat, cudaGetErrorString(_m_cudaStat), __LINE__, __FILE__);  \
+        exit(1);                                                            \
+        } }
+
 
 static void handleSigchld( int sig);
 
@@ -32,11 +45,12 @@ cci_os_handle_t *endpointFd = NULL; // file descriptor that can block waiting fo
                                     // progress on the endpoint
 cci_connection_t *connection = NULL;
 cci_rma_handle_t *local = NULL;
-
+unsigned connection_context = 1; // can be anything.  It's actually the address
+                                 // that gets sent back and forth
+                                 
 // Start up the daemon and set up the CCI connection
 // Returns a cci_status value, or a negated errno value (ie: -22 for EINVAL)
-int initIo(void *buffer, uint32_t len, uint32_t rank, uint32_t localRanks,
-        char **daemon_args)
+int initIo(void *buffer, uint32_t len, uint32_t rank, char **daemon_args)
 {
     int ret = CCI_SUCCESS;
     uint32_t caps = 0;
@@ -123,10 +137,9 @@ int initIo(void *buffer, uint32_t len, uint32_t rank, uint32_t localRanks,
     // Set up a CCI message to 
     msg.connect.type = CONNECT;
     msg.connect.rank = rank;
-    msg.connect.ranks = localRanks;
    
-    ret = cci_connect(endpoint, server, &msg, sizeof(msg.connect),
-            CCI_CONN_ATTR_RO, NULL, 0, NULL);
+    ret = cci_connect(endpoint, uri.c_str(), &msg, sizeof(msg.connect),
+            CCI_CONN_ATTR_RO, &connection_context, 0, NULL);
     if (ret) {
         cciDbgMsg("cci_connect()", ret);
         goto out;
@@ -273,8 +286,11 @@ static int startDaemon(char **args)
         ret = errno;
         cerr << __func__ << ": fork() failed with " << strerror( ret) << endl;
     } else if (daemonPid == 0) {
-        execve(args[0], args, environ);
-        /* if we return, exec() failed */
+        // HACK!! Don't Check in!
+        // We'll start the daemon manually in the debugger
+        execve("/usr/bin/true", args, environ);
+        //execve(args[0], args, environ);
+        // if we actually return, it means exec() failed
         ret = errno;
         cerr << __func__ << ": execve() failed with " << strerror(ret) << endl;
         exit(ret);
@@ -301,3 +317,126 @@ static void handleSigchld( int sig)
     }
     return;
 }
+
+// write to a local file
+int writeLocal(void *buf, streamsize len, ofstream &outf)
+{   
+    outf.seekp( 0);
+    outf.write( (const char *)buf, len);
+    return 0;
+}
+
+
+
+// Write to the remote daemon (either the GPU or system ram depending
+// on what the daemon tells us).
+// returns a CCI_STATUS
+int writeRemote(void *buf, size_t len)
+{   
+
+    int ret = 0;
+    unsigned done = 0; // used for checking cci events
+    
+    // First up - send a write request message
+    IoMsg sndMsg, replyMsg;
+    sndMsg.writeRequest.type = WRITE_REQ;
+    sndMsg.writeRequest.len = len;
+       
+    ret = cci_send( connection, &sndMsg, sizeof( sndMsg.writeRequest), &sndMsg, CCI_FLAG_NO_COPY);
+    // Note: using the address of the buffer as the context...
+    if (ret) {
+        cciDbgMsg( "cci_send()", ret);
+        goto out;
+    }
+    
+    done = 0;
+    do {
+        cci_event_t *event = NULL;
+
+        ret = cci_get_event(endpoint, &event);
+        if (!ret) {
+
+            switch (event->type) {
+                case CCI_EVENT_SEND:
+                assert(event->send.context == &sndMsg);
+                done++;
+                break;
+                case CCI_EVENT_RECV:
+                    
+                assert( ((IoMsg *)(event->recv.ptr))->type == WRITE_REQ_REPLY);
+                memcpy(&replyMsg.writeReply, event->recv.ptr, event->recv.len);
+                done++;
+                break;
+                default:
+                cerr << __func__ << ": ignoring cci_event_type_str(event->type)" << endl;
+                break;
+            }
+            cci_return_event(event);
+        }
+    } while (done < 2);
+
+    // OK, the reply will tell us where to write the data (and also how much
+    // we can write)
+    if (replyMsg.writeReply.gpuMem) {
+        // write to the GPU memory
+        void *cudaMem;
+        
+        if (replyMsg.writeReply.len != len) {
+            cerr << __func__ << ": Haven't implemented multi-copy messages yet!" << endl;
+            abort();
+        }
+        
+        // unpack the mem handle and copy the data
+        CUDA_CHECK_RETURN( cudaIpcOpenMemHandle(
+                            &cudaMem, replyMsg.writeReply.memHandle,
+                            cudaIpcMemLazyEnablePeerAccess));
+        CUDA_CHECK_RETURN( cudaMemcpy( cudaMem, buf, len, cudaMemcpyHostToDevice));
+        CUDA_CHECK_RETURN( cudaIpcCloseMemHandle( cudaMem));
+        
+        // Send the writeDone message
+        sndMsg.writeDone.type = WRITE_DONE;
+        sndMsg.writeDone.reqId = replyMsg.writeReply.reqId;
+        ret = cci_send( connection, &sndMsg, sizeof( sndMsg.writeRequest), &sndMsg, CCI_FLAG_NO_COPY);
+        // Note: using the address of the buffer as the context...
+        if (ret) {
+            cciDbgMsg( "cci_send()", ret);
+            goto out;
+        }
+        
+        done = 0;
+        do {
+            cci_event_t *event = NULL;
+
+            ret = cci_get_event(endpoint, &event);
+            if (!ret) {
+
+                switch (event->type) {
+                    case CCI_EVENT_SEND:
+                    assert(event->send.context == &sndMsg);
+                    done++;
+                    break;
+                    
+                    default:
+                    cerr << __func__ << ": ignoring cci_event_type_str(event->type)" << endl;
+                    break;
+                }
+                cci_return_event(event);
+            }
+        } while (done < 1);
+        
+        // OK, the WRITE_DONE message is on its way
+        
+    } else { 
+        //write to system ram
+        
+        // TODO: implement me!!
+        cerr << __func__ << ": Haven't implemented caching to system ram yet!" << endl;
+        abort();
+    }
+    
+    
+    out:
+    return ret;
+}
+
+

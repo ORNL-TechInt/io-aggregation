@@ -14,40 +14,36 @@
                                                                        
 class Peer {
 public:
-    Peer( uint32_t theRank);
+    Peer( uint32_t rank);
     ~Peer();
     
-    
-    bool isDone() { return done; }
+    void setConnection( cci_connection_t * conn) { m_conn = conn; }
+    void setDone( bool done) { m_done = done; }
+    bool isDone() { return m_done; }
+    void writeStatistics();
     
     // TODO: should the data all be private?
     
-    cci_connection_t    *conn; // CCI connection
-//    void    *buffer;
-    
-//    cci_rma_handle_t    *remote; /* Their CCI RMA handle */
-// don't think we need this - client will initiate RMA's
+    cci_connection_t    *m_conn; // CCI connection
 
-//    uint32_t    requests; /* Number of requests received */
-//    uint32_t    completed; /* Number of completed requests on ios list */
-// These 2 are handled the size() function on the vectors
-
-    std::vector <IoRequest> receivedReqs;
-    std::vector <IoRequest> completedReqs;
+    std::vector <IoRequest> m_receivedReqs;
+    std::vector <IoRequest> m_completedReqs;
     // TODO: should these be maps instead?
     // TODO: Should these be containers of pointers, rather than actual structs?
     //       Would make it easier to associate cache blocks...
     
-//    uint32_t    len; /* RMA buffer length */
-    uint32_t    rank; // Peer's MPI rank
-    std::ofstream outf; // File for peer
+
+    uint32_t    m_rank; // Peer's MPI rank (mainly for identification when
+                      // printing statistics)
+                      
+    std::ofstream m_outf; // File for peer
     // FUTURE:  For the "real" version, we'll want clients to be able
     // to specify the file descriptor per request, so this value will
     // have to move to the IoRequest struc.  We'll also need open & 
     // close message so the clients can tell the daemon which files to
     // write to.
-    bool done; // client sent BYE message
-    pthread_mutex_t mut; // Lock to protect everything in this struct
+    bool m_done; // client sent BYE message
+    pthread_mutex_t m_mut; // Lock to protect everything in this struct
     
     
 private:

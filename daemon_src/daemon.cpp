@@ -9,6 +9,7 @@
 #include "iorequest.h"
 #include "peer.h"
 
+#include <assert.h>
 #include <cci.h>
 #include <pthread.h>
 #include <semaphore.h>
@@ -23,20 +24,19 @@
 using namespace std;
 
 
-#ifdef __NVCC__
-    #include <cuda_runtime.h>
-    #include <cuda.h>
+#include <cuda_runtime.h>
+#include <cuda.h>
 
-    // This macro checks return value of the CUDA runtime call and exits
-    // the application if the call failed.
-    #define CUDA_CHECK_RETURN(value) {                              \
-        cudaError_t _m_cudaStat = value;                            \
-        if (_m_cudaStat != cudaSuccess) {                           \
-            fprintf(stderr, "Error %s at line %d in file %s\n",     \
-            cudaGetErrorString(_m_cudaStat), __LINE__, __FILE__);   \
-            exit(1);                                                \
-            } }
-#endif // defined __NVCC__
+// This macro checks return value of the CUDA runtime call and exits
+// the application if the call failed.
+#define CUDA_CHECK_RETURN(value) {                                           \
+    cudaError_t _m_cudaStat = value;                                         \
+    if (_m_cudaStat != cudaSuccess) {                                        \
+        fprintf(stderr, "Error %d - %s - at line %d in file %s\n",           \
+         _m_cudaStat, cudaGetErrorString(_m_cudaStat), __LINE__, __FILE__);  \
+        exit(1);                                                             \
+        } }
+
 
 // Does a bunch of CCI initialization stuff.
 // Returns a cci_status
@@ -57,8 +57,8 @@ sem_t writeThreadSem;  // the write thread will wait on this.  Every
                        // ready list (see below) we'll post it.
 
 cci_endpoint_t *endpoint = NULL;
-cci_os_handle_t *endpointFd = NULL; // file descriptor that can block waiting for
-                                    // progress on the endpoint
+cci_os_handle_t *endpointFd = NULL;  // file descriptor that can block waiting for
+                                     // progress on the endpoint
                                     
 struct cci_rma_handle localRmaHandle; 
 // can't use a cci_rma_handle_t here because it's
@@ -66,8 +66,9 @@ struct cci_rma_handle localRmaHandle;
                                     
                                     
 
-map <unsigned, Peer *> peerList;
-// Keep track of our connections.  The key is the client's MPI rank
+map <cci_connection_t *, Peer *> peerList;
+// Keep track of our connections.  The key is the client's connection
+// pointer.
 // NOTE: Container of pointers! Don't forget to delete the object when
 // you remove it from the container!
 // TODO: do we need a mutex for this??
@@ -75,12 +76,12 @@ map <unsigned, Peer *> peerList;
 // Two lists of cache blocks - the first is for blocks that have been allocated
 // and clients are in the process of copying data to.  The second is for blocks
 // whose the clients have finished their copy and can now be written to disk
-deque <CacheBlock *> incomingBlockList;
+// The key is the reqId value (see handleWriteRequest())
+map <uint32_t, CacheBlock *> incomingBlockList;
 deque <CacheBlock *> readyBlockList;
 // NOTE: containers of pointers! Don't forget to call delete after popping
 // one off the list
 pthread_mutex_t blockListMut; // Protect access to the 2 block lists
-
 
 // Set to true by the main thread to indicate that background thread(s)
 // need to exit
@@ -95,6 +96,7 @@ int main(int argc, char *argv[])
     // and if we're compiled without cuda, the value must remain 0.
     uint64_t maxGpuRam = 0;  // in bytes
     uint64_t usedGpuRam = 0;  // amount (in bytes) that we've currently allocated   
+    // TODO: we're not making use of these parameters!
  
     char *uri = NULL;
     char hostname[64], uriFileName[128];
@@ -137,7 +139,6 @@ int main(int argc, char *argv[])
     // blocks.
     
     // Figure out how much GPU memory we have to work with.
-#ifdef __NVCC__
     size_t freeMem, totalMem;
     CUDA_CHECK_RETURN( cudaMemGetInfo( &freeMem, &totalMem));
    
@@ -148,7 +149,6 @@ int main(int argc, char *argv[])
     // Use the lesser of the 2 values
     // TODO: Is using the lesser the right idea?
     maxGpuRam = (freeMem < totalMem) ? freeMem : totalMem;
-#endif
     
     if (cmdOpts.maxGpuRam != -1) { // If the user specified an actual value
         if ( ((uint64_t)cmdOpts.maxGpuRam * (1024 * 1024)) > maxGpuRam) {
@@ -304,6 +304,8 @@ out:
 
 
 // thread function for copying data out of cache and writing it to disk
+// also handles other tasks that could take a while, such as cleaning
+// the finished peers out of the peer list
 void *writeThread( void *)
 {
     while (!shuttingDown) {
@@ -326,23 +328,33 @@ void *writeThread( void *)
         
         // lock the mutex, pop the first block off the ready list and then
         // release the mutex
-        CacheBlock *cb;
+        CacheBlock *cb = NULL;
         pthread_mutex_lock( &blockListMut);
         if (readyBlockList.size() > 0) {
             cb = readyBlockList.front();
             readyBlockList.pop_front();
-        } else {
-            // The only reason I can think of that the list would be empty
-            // is if the sem_wait() returned an error...
-            cerr << __func__
-                 << ": empty readyBlockList.  Why did the thread wake up??"
-                 << endl;
-        }
+        } 
         pthread_mutex_unlock( &blockListMut);
-
         
-        //cb->write(); TODO: Implement!!
-        delete cb;
+        if (cb) {
+            // We woke up because a block needed to be written...
+            cb->write();
+            delete cb;    
+        } else {
+            // We work up for some other reason...
+        
+            // Check the peer list for any peers that are marked done
+            auto it = peerList.begin();
+            while (it != peerList.end()) {
+                Peer *peer = it->second;
+                if (peer->isDone()) {
+                    peerList.erase( it);
+                    delete peer;  // Peer destructor will write out statistics
+                }
+                it++;
+            }
+        }
+        
     }
         
         
@@ -350,7 +362,7 @@ void *writeThread( void *)
 }
 
 // Specific event handlers...
-static void handle_connect_request( cci_event_t * event)
+static void handleConnectRequest( cci_event_t * event)
 {
     int ret = 0;
     IoMsg *msg = (IoMsg *) event->request.data_ptr;
@@ -366,13 +378,16 @@ static void handle_connect_request( cci_event_t * event)
     
     peer = new Peer( msg->connect.rank);
 
+    // Note: peer isn't complete yet.  It still needs a connection
+    // pointer which we don't have.  So, attach the peer pointer as
+    // the context to cci_accept() and finish setting it up down in
+    // handleAccept()
     ret = cci_accept(event, peer);
     if (ret) {
         cciDbgMsg( "cci_accept()", ret);
         goto out;
     }
 
-    peerList[peer->rank] = peer;
 
     out:
     if (ret)
@@ -381,16 +396,121 @@ static void handle_connect_request( cci_event_t * event)
     return;
 }
 
-static void handle_accept( cci_event_t * event)
+static void handleAccept( cci_event_t * event)
 {
+    // Fetch the connection pointer from the event struct
+    if (event->accept.status) {
+        cerr << __func__ << ": Accept event status "
+             << event->accept.status << "!  Connection not accepted!"
+             << endl;
+    } else {
+        cci_connection_t *conn = event->accept.connection;
+        Peer *peer = (Peer *)event->accept.context;
+        peerList[conn] = peer;
+    }
+}
+
+// The client has asked for a location to write some data...
+static void handleWriteRequest( const IoMsg *rx, cci_connection_t *conn)
+{
+    // Note: I expect this function to get more complex as we start
+    // doing things like supporting main memory cache or managing
+    // the GPU ram ourselves (instead of calling cudaMalloc/cudaFree)
     
+    static uint32_t maxReqId = 0;  // used for assigning request ID's
+       
+    // Allocate some memory
+    uint32_t len = rx->writeRequest.len;
+    void *memPtr;
+    CUDA_CHECK_RETURN( cudaMalloc( &memPtr, len));
+    // TODO: if the length is too big, cudaMalloc will fail!!
+    // We'll need to do a better job than this in production!
+       
+    // Set up the rest of the reply message
+    IoMsg sendMsg;
+    sendMsg.writeReply.type = WRITE_REQ_REPLY;
+    sendMsg.writeReply.reqId =  maxReqId++;
+    sendMsg.writeReply.gpuMem = true;
+    sendMsg.writeReply.len = len;
+    sendMsg.writeReply.offset = 0;  // not used for writes to GPU mem
+    
+    CUDA_CHECK_RETURN( cudaIpcGetMemHandle( &sendMsg.writeReply.memHandle, memPtr));  
+    
+    // Sending the reply just as quickly as we can (even though we've still
+    // got some work to do on this end (such as creating the cache block)
+    int ret = cci_send( conn, &sendMsg.writeReply,
+                        sizeof(sendMsg.writeReply), NULL, 0);
+    if (ret) {
+        cciDbgMsg( "cci_send()", ret);
+    }
+    
+    // Create the cache block
+    Peer *peer = peerList[conn];
+    assert( peer != NULL);
+    GPURamCacheBlock *cb = new GPURamCacheBlock(
+                                memPtr, len, rx->writeRequest.offset, peer);
+    
+    pthread_mutex_lock( &blockListMut);
+    incomingBlockList[sendMsg.writeReply.reqId] = cb;
+    pthread_mutex_unlock( &blockListMut);
+
 }
-static void handle_recv( cci_event_t * event)
+
+// The client has just told us it's done copying data
+static void handleWriteDone( const IoMsg *rx)
 {
+    // Move the associated CacheBlock from the incoming list
+    // to the ready list
+    uint32_t reqId = rx->writeDone.reqId;
+    pthread_mutex_lock( &blockListMut);
+    CacheBlock *cb = incomingBlockList[reqId];
+    assert( cb);
+    incomingBlockList.erase( reqId);
+    readyBlockList.push_back( cb);
+    pthread_mutex_unlock( &blockListMut);
+    
+    // Wake up the background thread
+    sem_post( &writeThreadSem);
 }
-static void handle_send( cci_event_t * event)
+
+static void handleBye( const IoMsg *rx, cci_connection_t *conn)
 {
+    // Mark the appropriate peer object as done and then wake the
+    // background thread.  (Don't want to tie up the comm loop
+    // handling tasks that might take a little time.)
+    Peer *peer = peerList[conn];
+    peer->setDone( true);
+    sem_post( &writeThreadSem);
 }
+
+static void handleRecv( cci_event_t * event)
+{
+    IoMsg *rx = (IoMsg *)event->recv.ptr;
+    cci_connection_t *conn = event->recv.connection;
+    switch (rx->type) {
+        case WRITE_REQ:
+            handleWriteRequest( rx, conn);
+            break;
+        case WRITE_DONE:
+            handleWriteDone( rx);
+            break;
+        case BYE:
+            handleBye( rx, conn);
+            break;
+ 
+            
+        default:
+            cerr << __func__ << ": Ignoring unexpected message type "
+                 << rx->type << endl;
+    }
+}
+
+static void handleSend( cci_event_t * event)
+{
+    //TODO: do we need to do anything for send events?
+}
+
+
 
 // Handle all the CCI events
 static void commLoop()
@@ -411,16 +531,16 @@ static void commLoop()
         
         switch (event->type) {
             case CCI_EVENT_CONNECT_REQUEST:
-                handle_connect_request(event);
+                handleConnectRequest(event);
                 break;
             case CCI_EVENT_ACCEPT:
-                handle_accept(event);
+                handleAccept(event);
                 break;
             case CCI_EVENT_RECV:
-                handle_recv(event);
+                handleRecv(event);
                 break;
             case CCI_EVENT_SEND:
-                handle_send(event);
+                handleSend(event);
                 break;
             default:
                 cerr << __func__ << ": ignoring "
@@ -440,13 +560,15 @@ static void printResults()
     ofstream out;
     
     // Each peer gets its own output file
-    for (unsigned i=0; i < peerList.size(); i++) {
+    auto it = peerList.begin();
+    while (it != peerList.end()) {
+        Peer *peer = it->second;
         ostringstream fname("");
-        fname << "rank-" << peerList[i]->rank << "-iod";
+        fname << "rank-" << peer->m_rank << "-iod";
         out.open( fname.str().c_str());
         if (! out) {
             cerr << "Failed to open " << fname.str()
-                 << ".  Skipping results for rank " << peerList[i]->rank
+                 << ".  Skipping results for rank " << peer->m_rank
                  << endl;
             continue;
         }
@@ -456,17 +578,18 @@ static void printResults()
         out << "daemon" << endl;
         
         // Second line is some overall stats for this rank
-        out << "rank " << peerList[i]->rank
-            << " num_requests " << peerList[i]->completedReqs.size()
+        out << "rank " << peer->m_rank
+            << " num_requests " << peer->m_completedReqs.size()
             << " max_len " << "?????" << endl;
             // TODO: implement the max length stuff
         
         // one line for each completed request
-        for (unsigned j=0; j < peerList[i]->completedReqs.size(); j++) {
-            peerList[i]->completedReqs[j].writeResults( out);
+        for (unsigned j=0; j < peer->m_completedReqs.size(); j++) {
+            peer->m_completedReqs[j].writeResults( out);
         }
         
         out.close();
+        it++;
     }
         
     return;

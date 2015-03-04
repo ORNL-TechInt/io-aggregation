@@ -7,15 +7,26 @@
 #include <string.h>
 #include <stdint.h>
 
+#include <fstream>
+
 // Start up the daemon and set up the CCI connection
 // Returns a cci_status value, or a negated errno value (ie: -22 for EINVAL)
-int initIo( void *buffer, uint32_t len, uint32_t rank,
-            uint32_t localRanks, char **daemon_args);
+int initIo( void *buffer, uint32_t len, uint32_t rank, char **daemon_args);
 
 // Shut down the CCI connection
 // Note: doesn't touch the daemon.  (Presumably, it will shut itself down.)
 // Returns cci_status or negated errno (ie -22 for EINVAL)
 int finalizeIo(void);
+
+
+// Write the data to a local file
+int writeLocal(void *buf, std::streamsize len, std::ofstream &outf);
+
+// Write to the remote daemon (either the GPU or system ram depending
+// on what the daemon tells us).
+// returns a CCI_STATUS
+int writeRemote(void *buf, size_t len);
+
 
 
 #endif // _UTILS_H_
