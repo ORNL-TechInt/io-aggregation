@@ -5,6 +5,7 @@
 #include "cci_msg.h"  // client/daemon message definitions
 #include "cci_util.h"
 #include "cacheblock.h"
+#include "cuda_util.h"
 #include "daemoncmdlineopts.h"
 #include "iorequest.h"
 #include "peer.h"
@@ -16,6 +17,9 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <cuda_runtime.h>
+#include <cuda.h>
+
 #include <deque>
 #include <fstream>
 #include <iostream>
@@ -23,19 +27,6 @@
 #include <sstream>
 using namespace std;
 
-
-#include <cuda_runtime.h>
-#include <cuda.h>
-
-// This macro checks return value of the CUDA runtime call and exits
-// the application if the call failed.
-#define CUDA_CHECK_RETURN(value) {                                           \
-    cudaError_t _m_cudaStat = value;                                         \
-    if (_m_cudaStat != cudaSuccess) {                                        \
-        fprintf(stderr, "Error %d - %s - at line %d in file %s\n",           \
-         _m_cudaStat, cudaGetErrorString(_m_cudaStat), __LINE__, __FILE__);  \
-        exit(1);                                                             \
-        } }
 
 
 // Does a bunch of CCI initialization stuff.

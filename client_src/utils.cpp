@@ -1,6 +1,7 @@
 
 #include "cci_msg.h"
 #include "cci_util.h"
+#include "cuda_util.h"
 #include "utils.h"
 
 #include <assert.h>
@@ -14,22 +15,12 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include <iostream>
-#include <fstream>
-using namespace std;
-
 #include <cuda_runtime.h>
 #include <cuda.h>
 
-// This macro checks return value of the CUDA runtime call and exits
-// the application if the call failed.
-#define CUDA_CHECK_RETURN(value) {                                          \
-    cudaError_t _m_cudaStat = value;                                        \
-    if (_m_cudaStat != cudaSuccess) {                                       \
-        fprintf(stderr, "Error %d - %s - at line %d in file %s\n",          \
-        _m_cudaStat, cudaGetErrorString(_m_cudaStat), __LINE__, __FILE__);  \
-        exit(1);                                                            \
-        } }
+#include <iostream>
+#include <fstream>
+using namespace std;
 
 
 static void handleSigchld( int sig);
@@ -341,6 +332,7 @@ int writeRemote(void *buf, size_t len)
     IoMsg sndMsg, replyMsg;
     sndMsg.writeRequest.type = WRITE_REQ;
     sndMsg.writeRequest.len = len;
+    sndMsg.writeRequest.offset = 0;
        
     ret = cci_send( connection, &sndMsg, sizeof( sndMsg.writeRequest), &sndMsg, CCI_FLAG_NO_COPY);
     // Note: using the address of the buffer as the context...

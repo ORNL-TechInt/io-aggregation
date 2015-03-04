@@ -20,7 +20,7 @@ Peer::Peer( uint32_t rank)
     ostringstream fname("");
     fname << "rank-" << rank << "-iod-data";
     m_outf.open( fname.str().c_str());
-    if (!m_outf) {
+    if (!m_outf.good()) {
         cerr << "Failed to open " << fname.str() << "!  Aborting!!" << endl;
         exit( -1);
     }
@@ -39,7 +39,7 @@ Peer::~Peer()
     }
     
     // Close the output file
-    if (m_outf) {
+    if (m_outf.is_open()) {
         m_outf.close();
     }
     
