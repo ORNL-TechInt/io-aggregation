@@ -328,20 +328,25 @@ void *writeThread( void *)
         
         // lock the mutex, pop the first block off the ready list and then
         // release the mutex
+        bool cacheBlocksDeleted = false;
         CacheBlock *cb = NULL;
         pthread_mutex_lock( &blockListMut);
-        if (readyBlockList.size() > 0) {
+        while (readyBlockList.size() > 0) {
             cb = readyBlockList.front();
             readyBlockList.pop_front();
-        } 
-        pthread_mutex_unlock( &blockListMut);
+            pthread_mutex_unlock( &blockListMut);
         
-        if (cb) {
-            // We woke up because a block needed to be written...
             cb->write();
             delete cb;    
-        } else {
-            // We work up for some other reason...
+            cacheBlocksDeleted = true;
+            pthread_mutex_lock( &blockListMut);
+        }
+        pthread_mutex_unlock( &blockListMut);
+        
+        
+        if (! cacheBlocksDeleted) {
+            // We woke up for some reason other than writing out
+            // ready cache blocks...
         
             // Check the peer list for any peers that are marked done
             auto it = peerList.begin();
@@ -350,6 +355,13 @@ void *writeThread( void *)
                 if (peer->isDone()) {
                     peerList.erase( it);
                     delete peer;  // Peer destructor will write out statistics
+                    // NOTE: CacheBlock instances all have Peer pointers,
+                    // so we need to ensure don't delete Peer objects while there
+                    // are still cache blocks pointing to them.  We manage this
+                    // with the WRITE_DONE and FINISHED messages.  Peer get
+                    // marked "done" when the FINISHED message comes in.  Once we
+                    // receive that message, we cannot accept any more messages
+                    // on that connection.
                 }
                 it++;
             }
@@ -487,6 +499,12 @@ static void handleRecv( cci_event_t * event)
 {
     IoMsg *rx = (IoMsg *)event->recv.ptr;
     cci_connection_t *conn = event->recv.connection;
+    
+    // Validate the connection (once we've received the BYE
+    // message, we can't accept any more message from the peer)
+    Peer *peer = peerList[conn];
+    assert( peer->isDone() == false);
+    
     switch (rx->type) {
         case WRITE_REQ:
             handleWriteRequest( rx, conn);
