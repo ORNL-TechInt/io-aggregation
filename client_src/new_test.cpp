@@ -72,25 +72,29 @@ int main( int argc, char **argv)
         
     // Initialize CCI & start up the daemon
     if (cmdOpts.useDaemon) {
-        char **daemonArgs = new char *[2];
-        daemonArgs[0] = (char *)"daemon";
-        daemonArgs[1] = NULL;
+        int rc = 0;
+        if (cmdOpts.daemonAutostart) {
+            char **daemonArgs = new char *[2];
+            daemonArgs[0] = (char *)"daemon";
+            daemonArgs[1] = NULL;
+            rc = startOneDaemon( daemonArgs);
+            if (rc) {
+                cerr << "System error " << rc << " starting daemon: " 
+                     << strerror( rc) << endl;
+                cerr << "Aborting" << endl;
+                return -1;
+            }
+            
+            delete[] daemonArgs;
+        }
         
-        int rc = initIo(buf, cmdOpts.maxLen, rank, daemonArgs);
-        if (rc) {
-            if (rc > 0) {
-                cerr << "CCI error during initialization: " 
-                    << cci_strerror( NULL,(cci_status)rc) << endl;
-            }
-            else {
-                cerr << "System error during initialization: " 
-                    << strerror( -rc) << endl;
-            }
+        rc = initIo(buf, cmdOpts.maxLen, rank);
+        if (rc) {         
+            cerr << "CCI error " << rc << " during initialization: " 
+                 << cci_strerror( NULL,(cci_status)rc) << endl;
             cerr << "Aborting" << endl;
             return -1;
         }
-        
-        delete[] daemonArgs;
     }
     
 

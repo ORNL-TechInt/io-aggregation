@@ -25,10 +25,6 @@ using namespace std;
 
 static void handleSigchld( int sig);
 
-// returns 0 for success, errno on failure
-static int startDaemon( char **args);
-
-
 // variables that will need to be shared by multiple functions in this .cpp file
 pid_t daemonPid;  // Process ID of the daemon
 cci_endpoint_t *endpoint = NULL;
@@ -36,20 +32,48 @@ cci_os_handle_t *endpointFd = NULL; // file descriptor that can block waiting fo
                                     // progress on the endpoint
 cci_connection_t *connection = NULL;
 cci_rma_handle_t *local = NULL;
-unsigned connection_context = 1; // can be anything.  It's actually the address
-                                 // that gets sent back and forth
-                                 
+     
+
+// Start exactly one daemon process per host
+// Returns 0 on success, ERRNO on failure
+int startOneDaemon( char **daemonArgs)
+{
+    // We want one daemon per node.  There's no guaranteed mapping between
+    // nodes and ranks.  So, all ranks attemtp to exclusively create a file.
+    // The ranks that succeed, start up daemons.
+    int ret = 0;
+    char hostname[256];
+    memset(hostname, 0, sizeof(hostname));
+    gethostname(hostname, sizeof(hostname));
+
+    int ifd = open(hostname, O_WRONLY | O_CREAT | O_TRUNC | O_EXCL, 0600);
+    if (ifd != -1) {
+        signal(SIGCHLD, handleSigchld);
+        daemonPid = fork();
+        if (daemonPid == -1) {
+            ret = errno;
+            cerr << __func__ << ": fork() failed with " << strerror( ret) << endl;
+        } else if (daemonPid == 0) {
+            execve(daemonArgs[0], daemonArgs, environ);
+            // if we actually return, it means exec() failed
+            ret = errno;
+            cerr << __func__ << ": execve() failed with " << strerror(ret) << endl;
+        } else {
+            cerr << daemonArgs[0] << " daemon started with PID " << daemonPid << endl;
+        }
+    }
+    
+    return ret;
+}
+
 // Start up the daemon and set up the CCI connection
 // Returns a cci_status value, or a negated errno value (ie: -22 for EINVAL)
-int initIo(void *buffer, uint32_t len, uint32_t rank, char **daemon_args)
+int initIo(void *buffer, uint32_t len, uint32_t rank)
 {
     int ret = CCI_SUCCESS;
     uint32_t caps = 0;
     IoMsg msg;
     char hostname[256], server[256];
-    
-    int ifd;  // file descriptor used to determine which 
-              // rank starts the daemon
     
     // used for reading the URI from the file that the daemon writes
     ifstream iodFile;
@@ -62,23 +86,7 @@ int initIo(void *buffer, uint32_t len, uint32_t rank, char **daemon_args)
         ret = -EINVAL;
         goto out;
     }
-
-    // We want one daemon per node.  There's no guaranteed mapping between
-    // nodes and ranks.  So, all ranks attemtp to create a file exclusively.
-    // The ranks that succeed, start up daemons.
-    memset(hostname, 0, sizeof(hostname));
-    gethostname(hostname, sizeof(hostname));
-
-    ifd = open(hostname, O_WRONLY | O_CREAT | O_TRUNC | O_EXCL, 0600);
-    if (ifd != -1) {
-        ret = -startDaemon( daemon_args);
-        // note the negation of ret.  Positive return values are interpretted
-        // as cci_status values
-        if (ret) {
-            goto out;
-        }
-    }
-
+    
     // Do all the CCI initialization stuff: init, create an endpoint, register
     // the RMA buffer
     ret = cci_init(CCI_ABI_VERSION, 0, &caps);
@@ -102,12 +110,16 @@ int initIo(void *buffer, uint32_t len, uint32_t rank, char **daemon_args)
 
     // The daemon will write the CCI connection URI to a
     // well-known file.
+    memset(hostname, 0, sizeof(hostname));
+    gethostname(hostname, sizeof(hostname));
     memset(server, 0, sizeof(server));
     snprintf(server, sizeof(server), "%s-iod", hostname);
 
-    do {
+    iodFile.open( server);
+    while (! iodFile) {
+        usleep( 1000);
         iodFile.open( server);
-    } while (! iodFile);
+    } 
     
     do {
         getline( iodFile, uri);
@@ -119,7 +131,9 @@ int initIo(void *buffer, uint32_t len, uint32_t rank, char **daemon_args)
         else {
             // Complete URI hadn't been written yet.
             // Reset the stream and try again
-            iodFile.seekg( 0);
+            iodFile.clear();  // need to clear the eof bit or else reads won't work
+            iodFile.seekg(0);
+            usleep( 1000);
         }
     } while (! uriFound);
     
@@ -130,7 +144,7 @@ int initIo(void *buffer, uint32_t len, uint32_t rank, char **daemon_args)
     msg.connect.rank = rank;
    
     ret = cci_connect(endpoint, uri.c_str(), &msg, sizeof(msg.connect),
-            CCI_CONN_ATTR_RO, &connection_context, 0, NULL);
+            CCI_CONN_ATTR_RO, NULL, 0, NULL);
     if (ret) {
         cciDbgMsg("cci_connect()", ret);
         goto out;
@@ -263,35 +277,6 @@ int finalizeIo(void)
 
     return ret;
 }
-
-
-// returns 0 for success, or errno
-static int startDaemon(char **args)
-{
-    int ret = 0;
-
-    signal(SIGCHLD, handleSigchld);
-
-    daemonPid = fork();
-    if (daemonPid == -1) {
-        ret = errno;
-        cerr << __func__ << ": fork() failed with " << strerror( ret) << endl;
-    } else if (daemonPid == 0) {
-        // HACK!! Don't Check in!
-        // We'll start the daemon manually in the debugger
-        execve("/usr/bin/true", args, environ);
-        //execve(args[0], args, environ);
-        // if we actually return, it means exec() failed
-        ret = errno;
-        cerr << __func__ << ": execve() failed with " << strerror(ret) << endl;
-        exit(ret);
-    } else {
-        cerr << args[0] << " daemon started with PID " << daemonPid << endl;
-    }
-
-    return ret;
-}
-
 
 
 // If the daemon is terminated, we'll get a SIGCHLD

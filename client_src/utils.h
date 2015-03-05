@@ -9,9 +9,15 @@
 
 #include <fstream>
 
-// Start up the daemon and set up the CCI connection
+
+// Start exactly one daemon process per host
+// Returns 0 on success, negated ERRNO on failure
+// (Negated because we use positive values for CCI_STATUS codes elsewhere)
+int startOneDaemon( char **daemonArgs);
+
+// Set up the CCI connection
 // Returns a cci_status value, or a negated errno value (ie: -22 for EINVAL)
-int initIo( void *buffer, uint32_t len, uint32_t rank, char **daemon_args);
+int initIo( void *buffer, uint32_t len, uint32_t rank);
 
 // Shut down the CCI connection
 // Note: doesn't touch the daemon.  (Presumably, it will shut itself down.)

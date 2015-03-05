@@ -16,6 +16,7 @@
 #define CLIENT_BLOCKING false   // use CCI blocking mode on the client
 #define DAEMON_BLOCKING false   // use CCI blocking mode on the server
 #define USE_DAEMON  false       // whether or not to hand writes off to the daemon process
+#define DAEMON_AUTOSTART true   // automatically start the daemon
 struct CommandLineOptions {
 
     unsigned iters;
@@ -28,13 +29,14 @@ struct CommandLineOptions {
     bool daemonBlocking;
     size_t rmaBuf;  // in megabytes
     bool useDaemon;
+    bool daemonAutostart;
     
     
     CommandLineOptions() :
      iters(ITERS), sleepSecs(SLEEP_SECS), minLen(MIN_LENGTH), maxLen(MAX_LENGTH),
      extraRam(EXTRA_RAM), nullIo(NULL_IO), clientBlocking(CLIENT_BLOCKING),
      daemonBlocking(DAEMON_BLOCKING), rmaBuf(MAX_LENGTH / (1024*1024)),
-     useDaemon( USE_DAEMON) { }
+     useDaemon( USE_DAEMON), daemonAutostart(DAEMON_AUTOSTART) { }
     
 };
 
