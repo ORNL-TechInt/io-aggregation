@@ -13,7 +13,7 @@ ifndef CUDA_HOME
 $(error Export path to CUDA installation in variable named CUDA_HOME)
 endif
 
-#CC = g++ # use MPICC instead...
+CC = g++ # use MPICC instead...
 
 VPATH = common_src:client_src:daemon_src
 
@@ -44,7 +44,7 @@ new_test: $(NEW_TEST_OBJS)
 	$(MPICC) -o $@ $^ $(LDFLAGS)
 
 daemon: $(DAEMON_OBJS)
-	$(MPICC) -o $@ $^ $(LDFLAGS)
+	$(CC) -o $@ $^ $(LDFLAGS)
 
 $(NEW_TEST_OBJS):obj/new_test/%.o: %.cpp $(NEW_TEST_DEPS)
 	$(MPICC) -c -o $@ $< $(CFLAGS)
