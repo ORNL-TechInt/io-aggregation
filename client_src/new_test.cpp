@@ -8,6 +8,7 @@
 
 
 #include "cmdlineopts.h"
+#include "cuda_util.h"
 #include "timing.h"
 #include "utils.h"
 
@@ -46,6 +47,17 @@ int main( int argc, char **argv)
     // First up - parse the command line options
     if (! parseCmdLine( argc, argv, cmdOpts)) {
         printUsage(argv[0]);
+        return -1;
+    }
+
+    
+    // Make sure the GPU is in the proper compute mode, or this isn't going to work
+    struct cudaDeviceProp prop;
+    CUDA_CHECK_RETURN( cudaGetDeviceProperties ( &prop, 0));
+    if (prop.computeMode != 0) {
+        cerr << "Improper \"computeMode\" property: " << prop.computeMode 
+             << " Property value must be 0 to run." << endl
+             << "Aborting!" << endl;
         return -1;
     }
 
