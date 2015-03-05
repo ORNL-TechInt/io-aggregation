@@ -22,6 +22,7 @@
 #include <fstream>
 using namespace std;
 
+extern char **environ;
 
 static void handleSigchld( int sig);
 
@@ -325,7 +326,7 @@ int writeRemote(void *buf, size_t len)
         cciDbgMsg( "cci_send()", ret);
         goto out;
     }
-    
+
     done = 0;
     do {
         cci_event_t *event = NULL;
