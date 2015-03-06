@@ -67,7 +67,25 @@ int main( int argc, char **argv)
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
     
     
-    unsigned char* buf = new unsigned char[cmdOpts.maxLen];
+    unsigned char* buf;
+    bool bufIsPinned = false;
+    
+#ifndef DISABLE_DAEMON_PINNED_MEMORY
+    cudaError_t cudaErr = cudaMallocHost( &buf, cmdOpts.maxLen);
+    if (cudaErr == cudaSuccess) {
+        bufIsPinned = true;
+    } else {
+        // print a warning, then fall back to using regular memory
+        cerr << __FILE__ << ":" << __LINE__
+             << ": WARNING: failed to allocate pinned memory. "
+             << "Falling back to normal allocation." << endl;
+    }
+#endif
+
+    if (! bufIsPinned) {
+        // either the cudaMallocHost() call failed, or it wasn't compiled in
+        buf = new unsigned char[cmdOpts.maxLen];
+    }
     
     // If we're not using the daemon, we'll need a file we can write to
     if (cmdOpts.useDaemon == false) {
@@ -174,10 +192,19 @@ int main( int argc, char **argv)
             << "No results will be saved!" << endl;
     }
     
+    
     if (cmdOpts.useDaemon) {
         finalizeIo();
     }
+    
     MPI_Finalize();
+    
+    if (bufIsPinned) {
+        CUDA_CHECK_RETURN( cudaFreeHost( buf));
+    }
+    else {
+        delete[] buf;
+    }
 
     return 0;
 }

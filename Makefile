@@ -24,6 +24,13 @@ CFLAGS = -g -O0 -D_XOPEN_SOURCE=600 -std=c++0x -Wall -pedantic -I./common_src -I
 LDFLAGS = -dynamic -L$(CCI)/lib -lcci -lpthread -Wl,-rpath,$(CCI)/lib -L$(CUDA_HOME)/lib64 -lcudart -Wl,-rpath,$(CUDA_HOME)/lib64
 #NVLDFLAGS = -L$(CCI)/lib -lcci -lpthread -Xlinker -rpath=$(CCI)/lib
 
+# Uncomment to disable pinned memory on the daemon and/or client
+# (Default is to use pinned memory)
+#CFLAGS += -DDISABLE_DAEMON_PINNED_MEMORY
+#CFLAGS += -DDISABLE_CLIENT_PINNED_MEMORY
+
+
+
 
 DAEMON_DEPS = cacheblock.h cci_msg.h cci_util.h daemoncmdlineopts.h iorequest.h peer.h timing.h
 DAEMON_SRC = cacheblock.cpp cci_util.cpp daemon.cpp daemoncmdlineopts.cpp iorequest.cpp peer.cpp

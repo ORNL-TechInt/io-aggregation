@@ -36,7 +36,24 @@ bool GPURamCacheBlock::write()
     
     // Allocate a buffer in system memory we can use to hold data we've
     // moved out of GPU ram
-    char *bounceBuf = new char[BOUNCE_SIZE];
+    char *bounceBuf;
+    bool pinnedMem = false;
+#ifndef DISABLE_DAEMON_PINNED_MEMORY
+    cudaError_t cudaErr = cudaMallocHost( &bounceBuf, BOUNCE_SIZE);
+    if (cudaErr == cudaSuccess) {
+        pinnedMem = true;
+    } else {
+        // print a warning, then fall back to using regular memory
+        cerr << __FILE__ << ":" << __LINE__
+             << ": WARNING: failed to allocate pinned memory. "
+             << "Falling back to normal allocation." << endl;
+    }
+#endif
+    
+    if (! pinnedMem) {
+        // either the cudaMallocHost() call failed, or it wasn't compiled in
+        bounceBuf = new char[BOUNCE_SIZE];
+    }
     
     char *deviceMem = (char *)m_addr;
     // Treat the device memory as an array of characters - makes it easier
@@ -78,7 +95,12 @@ bool GPURamCacheBlock::write()
     
     ret = true;
 out:
-    delete[] bounceBuf;
+    if (pinnedMem) {
+        CUDA_CHECK_RETURN( cudaFreeHost( bounceBuf));
+    }
+    else {
+        delete[] bounceBuf;
+    }
     
     return ret;
 }
