@@ -52,6 +52,18 @@ Peer::~Peer()
 
 void Peer::writeStatistics()
 {
-    // TODO: Implement me!
-    cerr << "Peer::writeStatistics not implemented yet!" << endl;
+    ostringstream fname("");
+    fname << "rank-" << m_rank << "-iod";
+    ofstream outf( fname.str().c_str());
+    
+    if (! outf.good()) {
+        cerr  << __func__ << ": failed to open statistics file " << fname.str() << endl;
+        return;
+    }
+    
+    for (unsigned i=0; i < m_completedReqs.size(); i++) {
+        m_completedReqs[i].writeResults( outf);
+    }
+
+    outf.close();
 }

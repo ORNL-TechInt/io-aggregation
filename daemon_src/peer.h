@@ -5,7 +5,7 @@
 
 
 #include "cci.h"
-#include "iorequest.h"
+#include "iostats.h"
 
 #include <pthread.h>
 
@@ -26,11 +26,8 @@ public:
     
     cci_connection_t    *m_conn; // CCI connection
 
-    std::vector <IoRequest> m_receivedReqs;
-    std::vector <IoRequest> m_completedReqs;
-    // TODO: should these be maps instead?
-    // TODO: Should these be containers of pointers, rather than actual structs?
-    //       Would make it easier to associate cache blocks...
+    std::vector <IoStats> m_completedReqs;
+    // TODO: should these be maps instead? Possibly using reqId for the key?
     
 
     uint32_t    m_rank; // Peer's MPI rank (mainly for identification when
@@ -42,6 +39,7 @@ public:
     // have to move to the IoRequest struc.  We'll also need open & 
     // close message so the clients can tell the daemon which files to
     // write to.
+
     bool m_done; // client sent BYE message
     pthread_mutex_t m_mut; // Lock to protect everything in this struct
     

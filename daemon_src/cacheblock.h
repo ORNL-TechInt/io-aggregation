@@ -3,18 +3,24 @@
 
 #ifndef _CACHE_BLOCK_H_
 #define _CACHE_BLOCK_H_
+
 #include "peer.h"
+#include "iostats.h"
 
 class CacheBlock {
     
 public:
     
-    CacheBlock( void *addr, uint64_t length, off_t offset, Peer *peer);
+    CacheBlock( void *addr, uint64_t length, off_t offset,
+                Peer *peer, IoStats stats);
     virtual ~CacheBlock();
     
     // write this cache block to the specified file descriptor at the
     // specified offset
     virtual bool write() = 0;
+
+    IoStats m_stats;  // Timing (and other statistics) for this IO request
+    Peer * m_peer; // peer that requested this write
     
 protected:
 //    IoRequest * req;     // cache blocks are all associated with a request
@@ -25,7 +31,7 @@ protected:
                          // might be GPU ram depending on the child
                          // implementation)
     off_t   m_offset;  // offset into the file where the data goes
-    Peer * m_peer; // peer that requested this write
+    
     
     
 private:
@@ -43,7 +49,8 @@ public:
 
 class GPURamCacheBlock : public CacheBlock {
 public:
-    GPURamCacheBlock( void *addr, uint64_t length, off_t offset, Peer *peer);
+    GPURamCacheBlock( void *addr, uint64_t length, off_t offset,
+                      Peer *peer, IoStats stats);
     ~GPURamCacheBlock();
     
     bool write();

@@ -7,7 +7,7 @@
 #include "cacheblock.h"
 #include "cuda_util.h"
 #include "daemoncmdlineopts.h"
-#include "iorequest.h"
+#include "iostats.h"
 #include "peer.h"
 
 #include <assert.h>
@@ -324,10 +324,15 @@ void *writeThread( void *)
         pthread_mutex_lock( &blockListMut);
         while (readyBlockList.size() > 0) {
             cb = readyBlockList.front();
+            cb->m_stats.m_dequeue = getUs();
             readyBlockList.pop_front();
             pthread_mutex_unlock( &blockListMut);
-        
+                    
             cb->write();
+            
+            cb->m_stats.m_done = getUs();
+            // copy the stats object over to the peer's completed list
+            cb->m_peer->m_completedReqs.push_back( cb->m_stats); 
             delete cb;    
             cacheBlocksDeleted = true;
             pthread_mutex_lock( &blockListMut);
@@ -345,7 +350,8 @@ void *writeThread( void *)
                 Peer *peer = it->second;
                 if (peer->isDone()) {
                     peerList.erase( it);
-                    delete peer;  // Peer destructor will write out statistics
+                    peer->writeStatistics();
+                    delete peer;
                     // NOTE: CacheBlock instances all have Peer pointers,
                     // so we need to ensure don't delete Peer objects while there
                     // are still cache blocks pointing to them.  We manage this
@@ -421,6 +427,11 @@ static void handleWriteRequest( const IoMsg *rx, cci_connection_t *conn)
     // the GPU ram ourselves (instead of calling cudaMalloc/cudaFree)
     
     static uint32_t maxReqId = 0;  // used for assigning request ID's
+    
+    // Create the statistics object - do this as close to the top of
+    // the function as possible so that the recv time value is as
+    // accurate as possible
+    IoStats stats( rx->writeRequest.len);  
        
     // Allocate some memory
     uint32_t len = rx->writeRequest.len;
@@ -428,6 +439,9 @@ static void handleWriteRequest( const IoMsg *rx, cci_connection_t *conn)
     CUDA_CHECK_RETURN( cudaMalloc( &memPtr, len));
     // TODO: if the length is too big, cudaMalloc will fail!!
     // We'll need to do a better job than this in production!
+
+    stats.m_actualLen = len;
+    
        
     // Set up the rest of the reply message
     IoMsg sendMsg;
@@ -438,6 +452,8 @@ static void handleWriteRequest( const IoMsg *rx, cci_connection_t *conn)
     sendMsg.writeReply.offset = 0;  // not used for writes to GPU mem
     
     CUDA_CHECK_RETURN( cudaIpcGetMemHandle( &sendMsg.writeReply.memHandle, memPtr));  
+    
+    stats.m_reply = getUs();
     
     // Sending the reply just as quickly as we can (even though we've still
     // got some work to do on this end (such as creating the cache block)
@@ -451,7 +467,7 @@ static void handleWriteRequest( const IoMsg *rx, cci_connection_t *conn)
     Peer *peer = peerList[conn];
     assert( peer != NULL);
     GPURamCacheBlock *cb = new GPURamCacheBlock(
-                                memPtr, len, rx->writeRequest.offset, peer);
+                                memPtr, len, rx->writeRequest.offset, peer, stats);
     
     pthread_mutex_lock( &blockListMut);
     incomingBlockList[sendMsg.writeReply.reqId] = cb;
@@ -468,6 +484,7 @@ static void handleWriteDone( const IoMsg *rx)
     pthread_mutex_lock( &blockListMut);
     CacheBlock *cb = incomingBlockList[reqId];
     assert( cb);
+    cb->m_stats.m_enqueue = getUs();
     incomingBlockList.erase( reqId);
     readyBlockList.push_back( cb);
     pthread_mutex_unlock( &blockListMut);

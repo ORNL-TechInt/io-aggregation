@@ -7,8 +7,10 @@
 #include <iostream>
 using namespace std;
 
-CacheBlock::CacheBlock( void *addr, uint64_t length, off_t offset, Peer *peer)
- : m_length(length), m_addr( addr), m_offset(offset), m_peer(peer)
+CacheBlock::CacheBlock( void *addr, uint64_t length, off_t offset,
+                        Peer *peer, IoStats stats)
+ : m_stats( stats), m_peer(peer), m_length(length), m_addr( addr),
+   m_offset(offset)
 { /* no-op */ }
 
 CacheBlock::~CacheBlock()
@@ -16,8 +18,9 @@ CacheBlock::~CacheBlock()
     // TODO: Implement me!
 }
 
-GPURamCacheBlock::GPURamCacheBlock( void *addr, uint64_t length, off_t offset, Peer *peer)
-    : CacheBlock( addr, length, offset, peer)
+GPURamCacheBlock::GPURamCacheBlock( void *addr, uint64_t length, off_t offset,
+                                    Peer *peer, IoStats stats)
+    : CacheBlock( addr, length, offset, peer, stats)
 { /* No-op */ }
 
 GPURamCacheBlock::~GPURamCacheBlock()
