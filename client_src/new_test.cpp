@@ -145,18 +145,34 @@ int main( int argc, char **argv)
             /* Sync up */
             MPI_Barrier(MPI_COMM_WORLD);
 
+            unsigned numWriteIterations = 0;
             ts.start_us = getUs();
             if (cmdOpts.useDaemon) {
-                writeRemote(buf, len);
+                size_t totalBytesWritten = 0;
+                size_t bytesWritten;
+                while (totalBytesWritten < len) {
+                    size_t bytesToWrite = len - totalBytesWritten;
+                    writeRemote( &buf[totalBytesWritten], bytesToWrite, &bytesWritten);
+                    if (bytesWritten == 0) {
+                        // Out of space in the GPU memory - sleep briefly to
+                        // keep from thrashing the system with write requests
+                        // that can't be fullfilled
+                        usleep( 10 * 1000);
+                    }
+                    numWriteIterations++;
+                    totalBytesWritten += bytesWritten;
+                }
+                
             } else {
                 writeLocal(buf, len, outf);
+                numWriteIterations++;
             }
             ts.end_us = getUs();
             
             timeStamps.push_back( ts);
 
             if (rank == 0)
-                cerr << i << " ";
+                cerr << i << "(" << numWriteIterations << ") ";
 
             // Sleep instead of doing work for now
             sleep( cmdOpts.sleepSecs);
@@ -181,9 +197,14 @@ int main( int argc, char **argv)
     outf.open( fname.str().c_str());
     if (outf) {
         for (unsigned i=0; i < timeStamps.size(); i++) {
+            double secElapsed = (double)(timeStamps[i].end_us - timeStamps[i].start_us) / 1000000.0;
             outf << "len " << timeStamps[i].len
                 << " start " << timeStamps[i].start_us
-                << " end " << timeStamps[i].end_us << endl;
+                << " end " << timeStamps[i].end_us
+                << " elapsed " << timeStamps[i].end_us - timeStamps[i].start_us
+                << " MB/s " <<  (timeStamps[i].len / (1024.0*1024.0)) / secElapsed
+                << endl;
+                
         }
         outf.close();
         

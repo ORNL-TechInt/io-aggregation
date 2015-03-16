@@ -307,8 +307,9 @@ int writeLocal(void *buf, streamsize len, ofstream &outf)
 
 // Write to the remote daemon (either the GPU or system ram depending
 // on what the daemon tells us).
-// returns a CCI_STATUS
-int writeRemote(void *buf, size_t len)
+// returns a CCI_STATUS.  Number of bytes written (which may be less
+// than len, will be returned in bytesWritten)
+int writeRemote(void *buf, size_t len, size_t *bytesWritten)
 {   
 
     int ret = 0;
@@ -352,6 +353,13 @@ int writeRemote(void *buf, size_t len)
             cci_return_event(event);
         }
     } while (done < 2);
+    
+    // Check the length value - if it's 0, there's no memory available on the
+    // daemon and we should just bail out now.
+    if (replyMsg.writeReply.len == 0) {
+        *bytesWritten = 0;
+        goto out;
+    }
 
     // OK, the reply will tell us where to write the data (and also how much
     // we can write)
@@ -359,16 +367,12 @@ int writeRemote(void *buf, size_t len)
         // write to the GPU memory
         void *cudaMem;
         
-        if (replyMsg.writeReply.len != len) {
-            cerr << __func__ << ": Haven't implemented multi-copy messages yet!" << endl;
-            abort();
-        }
-        
         // unpack the mem handle and copy the data
         CUDA_CHECK_RETURN( cudaIpcOpenMemHandle(
                             &cudaMem, replyMsg.writeReply.memHandle,
                             cudaIpcMemLazyEnablePeerAccess));
-        CUDA_CHECK_RETURN( cudaMemcpy( cudaMem, buf, len, cudaMemcpyHostToDevice));
+        CUDA_CHECK_RETURN( cudaMemcpy( cudaMem, buf, replyMsg.writeReply.len,
+                                       cudaMemcpyHostToDevice));
         CUDA_CHECK_RETURN( cudaIpcCloseMemHandle( cudaMem));
         
         // Send the writeDone message
@@ -403,6 +407,8 @@ int writeRemote(void *buf, size_t len)
         } while (done < 1);
         
         // OK, the WRITE_DONE message is on its way
+        
+        *bytesWritten = replyMsg.writeReply.len;
         
     } else { 
         //write to system ram
