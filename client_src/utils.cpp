@@ -202,7 +202,6 @@ int finalizeIo(void)
         if (!ret) {
             // Check for the expected events
             bool sendEventProcessed = false;
-            bool recvEventProcessed = false;
             cci_event_t *event = NULL;
 
             do {
@@ -216,11 +215,6 @@ int finalizeIo(void)
                                 (void*)(uintptr_t)0xdeadbeef);
                         sendEventProcessed = true;
                         break;
-                    case CCI_EVENT_RECV:
-                        rx = (const IoMsg *)event->recv.ptr;
-                        assert(rx->type == FINISHED);
-                        recvEventProcessed = true;
-                        break;
                     default:
                         cerr << __func__ << ": ignoring "
                              << cci_event_type_str(event->type) << endl;
@@ -228,7 +222,7 @@ int finalizeIo(void)
                     }
                     cci_return_event(event);
                 }
-            } while (!sendEventProcessed && !recvEventProcessed);
+            } while (!sendEventProcessed);
 
             // to allow CCI to ack the send?
             for (unsigned i = 0; i < 10; i++)
@@ -261,12 +255,11 @@ int finalizeIo(void)
         cciDbgMsg("cci_finalize()", ret);
     }
 
-    sleep(1);
-
-    // Stop the daemon
+    // The daemon should shut down on its own (once it's written all the
+    // dirty cache to disk) - wait for it...
     if (daemonPid != -1) {
-        signal(SIGCHLD, SIG_IGN);
-        kill(daemonPid, SIGKILL);
+        //signal(SIGCHLD, SIG_IGN);
+        //kill(daemonPid, SIGKILL);
         waitpid(daemonPid, NULL, 0);
         
         // remove the file we exclusively created in order to

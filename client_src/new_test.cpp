@@ -158,6 +158,9 @@ int main( int argc, char **argv)
                         // keep from thrashing the system with write requests
                         // that can't be fullfilled
                         usleep( 10 * 1000);
+                        // TODO: A better idea would be to write a small amount using
+                        // writeLocal(), but in this test clients don't actually have
+                        // a file open when they're running in daemon mode...
                     }
                     numWriteIterations++;
                     totalBytesWritten += bytesWritten;

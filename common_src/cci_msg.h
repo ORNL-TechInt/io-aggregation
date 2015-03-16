@@ -24,7 +24,7 @@ enum IoMsgType {
     WRITE_DONE,      // C->S: RMA write or cudaMemCpy is done - server can now
                      //       start writing to disk
     BYE,             // C->S: client done
-    FINISHED         // C<-S: finished writing
+//    FINISHED         // C<-S: finished writing
 };
 
 

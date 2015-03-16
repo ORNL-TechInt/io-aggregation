@@ -176,10 +176,8 @@ int main(int argc, char *argv[])
     // Handle all the CCI events...
     commLoop();
     
-    // If we've returned from commLoop(), then it's time to shut down
-
-    shuttingDown = true;
-    sem_post( &writeThreadSem);  // wake up the thread so it sees the shutdown flag
+    // They only way we'll return from commLoop() is if shuttingDown has been
+    // set to true (presumably by the background thread)
     
     ret = pthread_join(tid, NULL);
     if (ret) {
@@ -215,7 +213,8 @@ int main(int argc, char *argv[])
         cciDbgMsg( "cci_finalize()", ret);
     }
 
-    return ret;
+    cerr << "Daemon exiting." << endl;
+    return 0;
 }
 
 
@@ -355,10 +354,24 @@ void *writeThread( void *)
                     // NOTE: CacheBlock instances all have Peer pointers,
                     // so we need to ensure don't delete Peer objects while there
                     // are still cache blocks pointing to them.  We manage this
-                    // with the WRITE_DONE and FINISHED messages.  Peer get
-                    // marked "done" when the FINISHED message comes in.  Once we
-                    // receive that message, we cannot accept any more messages
-                    // on that connection.
+                    // with the WRITE_DONE and BYE messages.  
+                    // When a WRITE_DONE message is processed, the thread wakes up
+                    // and handles all blocks in the readyBlockList.  In order to
+                    // make it to this block of code, 2 conditions must be met:
+                    // 1) there must have been 0 blocks in the ready list and
+                    // 2) the peer must be marked "done".
+                    // Peers get marked "done" when the BYE message is processed,
+                    // and clients don't send BYE messages until they've finished
+                    // all their writes and are ready to disconnect (and we're
+                    // using the CCI option to guarantee message order, so a
+                    // WRITE_DONE isn't going to arrive late).  As long as we don't
+                    // accept any write requests from a "done" peer, we're good.
+                    
+                    if (peerList.size() == 0) {
+                        // If we've just cleaned up the last peer, then we
+                        // can shut down the whole daemon.
+                        shuttingDown = true;
+                    }
                 }
                 it++;
             }
