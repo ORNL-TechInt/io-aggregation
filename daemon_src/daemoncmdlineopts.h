@@ -3,11 +3,14 @@
 #ifndef _DAEMON_CMDLINEOPTS_H_
 #define _DAEMON_CMDLINEOPTS_H_
 
+#include "gpumem.h"
+
 #include <stdlib.h>
 
 // Default vaules
 #define MAX_SYS_RAM      0 // in MB (-1 means use all available)
 #define MAX_GPU_RAM     -1 // in MB (-1 means use all available)
+#define DEFAULT_ALLOC    allocate_fcfs  // "First come / first served" allocation
 // TODO: Do we need an option for blocking mode?
 
 struct CommandLineOptions {
@@ -15,7 +18,11 @@ struct CommandLineOptions {
     int maxSysRam;      // in MB, 0 for no system ram cache, -1 for unlimited
     int maxGpuRam;      // in MB, 0 for no GPU ram cache, -1 for unlimited
     
-    CommandLineOptions() : maxSysRam(MAX_SYS_RAM), maxGpuRam(MAX_GPU_RAM)  { }
+    uint64_t (*gpuAlloc)( void **devPtr, uint64_t reqLen);
+                        // Pointer to GPU mem allocation functions
+    
+    CommandLineOptions() : maxSysRam(MAX_SYS_RAM), maxGpuRam(MAX_GPU_RAM),
+                           gpuAlloc( DEFAULT_ALLOC) { }
     
 };
 
