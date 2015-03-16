@@ -62,7 +62,7 @@ map <cci_connection_t *, Peer *> peerList;
 // pointer.
 // NOTE: Container of pointers! Don't forget to delete the object when
 // you remove it from the container!
-// TODO: do we need a mutex for this??
+pthread_mutex_t peerListMut; // Protect access to the peer list
 
 // Two lists of cache blocks - the first is for blocks that have been allocated
 // and clients are in the process of copying data to.  The second is for blocks
@@ -94,7 +94,8 @@ int main(int argc, char *argv[])
  
     char *uri = NULL;
     char hostname[64], uriFileName[128];
-    pthread_t tid;  // thread ID for the write thread
+#define MAX_THREADS 16  // can't see any reason why we'd ever have more than 4...
+    pthread_t tids[MAX_THREADS];  // thread IDs for the write thread(s)
 
     CommandLineOptions cmdOpts;
     
@@ -162,6 +163,18 @@ int main(int argc, char *argv[])
  
     
     ret = pthread_mutex_init(&blockListMut, NULL);
+    if (ret) {
+        cerr << "pthread_mutex_init() (for the block list mutex) failed with "
+             << strerror(ret) << endl;;
+        goto out;
+    }
+    
+    ret = pthread_mutex_init(&peerListMut, NULL);
+    if (ret) {
+        cerr << "pthread_mutex_init() (for the peer list mutex) failed with "
+             << strerror(ret) << endl;;
+        goto out;
+    }
  
     ret = sem_init( &writeThreadSem, 0, 0);
     if (ret) {
@@ -169,10 +182,12 @@ int main(int argc, char *argv[])
         goto out;
     }
     
-    ret = pthread_create(&tid, NULL, writeThread, NULL);
-    if (ret) {
-        cerr << "pthread_create() failed with " << strerror(ret) << endl;;
-        goto out;
+    for (unsigned i=0; i < cmdOpts.writeThreads; i++) {
+        ret = pthread_create(&tids[i], NULL, writeThread, NULL);
+        if (ret) {
+            cerr << "pthread_create() failed with " << strerror(ret) << endl;;
+            goto out;
+        }
     }
  
     
@@ -184,9 +199,17 @@ int main(int argc, char *argv[])
     // They only way we'll return from commLoop() is if shuttingDown has been
     // set to true (presumably by the background thread)
     
-    ret = pthread_join(tid, NULL);
-    if (ret) {
-        cerr << "pthread_join() failed with " << strerror(ret) << endl;
+    // Make sure all the threads wake up and discover that we're
+    // exiting. (They all wait on the same semaphore.)
+    for (unsigned i=0; i < cmdOpts.writeThreads; i++) {
+        sem_post(&writeThreadSem);
+    }
+    
+    for (unsigned i=0; i < cmdOpts.writeThreads; i++) {
+        ret = pthread_join(tids[i], NULL);
+        if (ret) {
+            cerr << "pthread_join() failed with " << strerror(ret) << endl;
+        }
     }
 
     // Write out the stats for the completed I/O requests
@@ -349,6 +372,7 @@ void *writeThread( void *)
             // ready cache blocks...
         
             // Check the peer list for any peers that are marked done
+            pthread_mutex_lock( &peerListMut);
             auto it = peerList.begin();
             while (it != peerList.end()) {
                 Peer *peer = it->second;
@@ -379,7 +403,9 @@ void *writeThread( void *)
                     }
                 }
                 it++;
-            }
+            }  // end while()
+            pthread_mutex_unlock( &peerListMut);
+
         }
         
     }
@@ -433,7 +459,9 @@ static void handleAccept( cci_event_t * event)
     } else {
         cci_connection_t *conn = event->accept.connection;
         Peer *peer = (Peer *)event->accept.context;
+        pthread_mutex_lock( &peerListMut);
         peerList[conn] = peer;
+        pthread_mutex_unlock( &peerListMut);
     }
 }
 

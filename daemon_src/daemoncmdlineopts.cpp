@@ -14,6 +14,7 @@ static struct option long_options[] = {
     {"sys_ram",        required_argument, 0, 'S'},
     {"gpu_ram",        required_argument, 0, 'G'},
     {"gpu_allocator",  required_argument, 0, 'A'},
+    {"write_threads",  required_argument, 0, 'T'},
     {0, 0, 0, 0} };
     
     
@@ -34,7 +35,7 @@ bool parseCmdLine( int argc, char **argv, CommandLineOptions &opts)
     {
         /* getopt_long stores the option index here. */
         int option_index = 0;
-        int c = getopt_long( argc, argv, "S:G:A:", long_options, &option_index);
+        int c = getopt_long( argc, argv, "S:G:A:T:", long_options, &option_index);
 
         /* Detect the end of the options. */
         if (c == -1)
@@ -64,6 +65,12 @@ bool parseCmdLine( int argc, char **argv, CommandLineOptions &opts)
                         return false;  // invalid allocator choise
                 }
                 break;
+            case 'T':
+                opts.writeThreads = atoi(optarg);
+                if (opts.writeThreads < 1) {
+                    return false;
+                }
+                break;
                 
             default:  // unrecognized option
                 return false;
@@ -77,7 +84,7 @@ bool parseCmdLine( int argc, char **argv, CommandLineOptions &opts)
 
 void printUsage(char *name)
 {
-    cerr <<  "Usage: " << name << " [-S <MB>] [-G <MB>] "
+    cerr <<  "Usage: " << name << " [-S <MB>] [-G <MB>] [-T <threads>] [-A <1|2>]"
          << endl;
 
     cerr << "where:" << endl;
@@ -87,6 +94,7 @@ void printUsage(char *name)
     cerr << "\t-G\tAmount of GPU ram to use for cache (in MB)." << endl
          << "\t\t0 for no GPU ram cache, -1 for unlimited. Default: "
          << MAX_GPU_RAM << endl;
+    cerr << "\t-T\tNumber of background write threads. Default: " << WRITE_THREADS << endl;
     cerr << "\t-A\tSelect allocator for GPU memory.  Valid options are:" << endl;
     cerr << "\t\t1 - First come, first served allocator" << endl;
     cerr << "\t\t2 - Fixed size block allocator" << endl;
