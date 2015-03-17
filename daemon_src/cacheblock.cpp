@@ -35,7 +35,7 @@ GPURamCacheBlock::~GPURamCacheBlock()
 bool GPURamCacheBlock::write()
 {
     bool ret = false;  
-    const uint32_t BOUNCE_SIZE = (4 * 1024 * 1024); // 4MB
+    const uint32_t BOUNCE_SIZE = (16 * 1024 * 1024); // 4MB
     
     // Allocate a buffer in system memory we can use to hold data we've
     // moved out of GPU ram
