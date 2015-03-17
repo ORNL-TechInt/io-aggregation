@@ -17,13 +17,15 @@
 
 // Struct defining the messages we can send via CCI
 enum IoMsgType {
-    CONNECT = 0,     // C->S: rank
-    CONNECT_REPLY,   // S->C: Connection established, Server's RMA handle
-    WRITE_REQ,       // C->S: write request - length of write buffer
-    WRITE_REQ_REPLY, // S->C: request accepted, where & how much to write
-    WRITE_DONE,      // C->S: RMA write or cudaMemCpy is done - server can now
-                     //       start writing to disk
-    BYE,             // C->S: client done
+    CONNECT = 0,       // C->S: rank
+    CONNECT_REPLY,     // S->C: Connection established, Server's RMA handle
+    WRITE_REQ,         // C->S: write request - length of write buffer
+    WRITE_REQ_REPLY,   // S->C: request accepted, where & how much to write
+    WRITE_DONE,        // C->S: RMA write or cudaMemCpy is done - server can now
+                       //       start writing to disk
+    BYE,               // C->S: client done
+    CACHE_USAGE,       // C->S: How much data is currently stored in the cache
+    CACHE_USAGE_REPLY, // S->C: Reply to above request
 //    FINISHED         // C<-S: finished writing
 };
 
@@ -71,9 +73,21 @@ union IoMsg {
         IoMsgType type; // BYE 
     } bye;
 
-    struct FiniMsg {
-        IoMsgType type; // FINISHED
-    } fini;
+    struct CacheUsageMsg {
+        IoMsgType type; // CACHE_USAGE
+    } cacheUsage;
+    
+    struct CacheUsageReplyMsg {
+        IoMsgType type; // CACHE_USAGE
+        bool isEmpty;
+        // For now, all I need is the isEmpty bool.  In the future, it
+        // may be useful to add actual MB values... 
+    } cacheUsageReply;
+    
+// Not use - will probably be deleted
+//    struct FiniMsg {
+//        IoMsgType type; // FINISHED
+//    } fini;
     
 };
 

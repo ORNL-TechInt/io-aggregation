@@ -553,6 +553,35 @@ static void handleWriteDone( const IoMsg *rx)
     sem_post( &writeThreadSem);
 }
 
+// The client wants to know how much data is in the cache
+static void handleCacheUsage( const IoMsg *rx, cci_connection_t *conn)
+{
+    // At the moment, the reply message just contains a single bool.
+    // That may change in the future, though...
+     // Set up the rest of the reply message
+    IoMsg sendMsg;
+    sendMsg.cacheUsageReply.type = CACHE_USAGE_REPLY;
+    
+    pthread_mutex_lock( &blockListMut);
+    if (readyBlockList.size() == 0 && incomingBlockList.size() == 0) {
+        sendMsg.cacheUsageReply.isEmpty = true;
+    } else {
+        sendMsg.cacheUsageReply.isEmpty = false;
+    }
+    pthread_mutex_unlock( &blockListMut);
+    
+    // Debugging text...
+    //cerr << "Daemon: received cache query from rank " << peerList[conn]->m_rank
+    //     << ". Cache empty flag is " << sendMsg.cacheUsageReply.isEmpty
+    //     << endl;
+    
+    int ret = cci_send( conn, &sendMsg.cacheUsageReply,
+                        sizeof(sendMsg.cacheUsageReply), NULL, 0);
+    if (ret) {
+        cciDbgMsg( "cci_send()", ret);
+    }
+}
+
 static void handleBye( const IoMsg *rx, cci_connection_t *conn)
 {
     // Mark the appropriate peer object as done and then wake the
@@ -579,6 +608,9 @@ static void handleRecv( cci_event_t * event)
             break;
         case WRITE_DONE:
             handleWriteDone( rx);
+            break;
+        case CACHE_USAGE:
+            handleCacheUsage( rx, conn);
             break;
         case BYE:
             handleBye( rx, conn);

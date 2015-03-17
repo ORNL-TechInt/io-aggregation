@@ -33,6 +33,9 @@ int writeLocal(void *buf, std::streamsize len, std::ofstream &outf);
 // returns a CCI_STATUS
 int writeRemote(void *buf, size_t len, size_t *bytesWritten);
 
+// Get the cache usage data from the daemon
+// returns a CCI_STATUS.  
+int checkCacheUsage(bool *isEmpty);
 
 
 #endif // _UTILS_H_

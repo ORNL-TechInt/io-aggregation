@@ -417,3 +417,50 @@ int writeRemote(void *buf, size_t len, size_t *bytesWritten)
 }
 
 
+// Get the cache usage data from the daemon
+// returns a CCI_STATUS.  
+int checkCacheUsage(bool *isEmpty)
+{
+    unsigned done = 0;
+    int ret;
+    
+    // First up - send the  request message
+    IoMsg sndMsg, replyMsg;
+    sndMsg.cacheUsage.type = CACHE_USAGE;
+       
+    ret = cci_send( connection, &sndMsg, sizeof( sndMsg.cacheUsage), &sndMsg, CCI_FLAG_NO_COPY);
+    // Note: using the address of the buffer as the context...
+    if (ret) {
+        cciDbgMsg( "cci_send()", ret);
+        goto out;
+    }
+
+    do {
+        cci_event_t *event = NULL;
+
+        ret = cci_get_event(endpoint, &event);
+        if (!ret) {
+
+            switch (event->type) {
+                case CCI_EVENT_SEND:
+                assert(event->send.context == &sndMsg);
+                done++;
+                break;
+                case CCI_EVENT_RECV:                   
+                assert( ((IoMsg *)(event->recv.ptr))->type == CACHE_USAGE_REPLY);
+                memcpy(&replyMsg.writeReply, event->recv.ptr, event->recv.len);
+                done++;
+                break;
+                default:
+                cerr << __func__ << ": ignoring cci_event_type_str(event->type)" << endl;
+                break;
+            }
+            cci_return_event(event);
+        }
+    } while (done < 2);
+    
+    *isEmpty = replyMsg.cacheUsageReply.isEmpty;
+    
+    out:
+    return ret;
+}

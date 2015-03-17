@@ -92,6 +92,7 @@ void printUsage(char *name)
     cerr << "where:" << endl;
     cerr << "\t-i\tNumber of iterations (default " << ITERS << ")" << endl;
     cerr << "\t-s\tSeconds between writes (default " << SLEEP_SECS << ")" << endl;
+    cerr << "\t  \t  (-1 says to sleep until the daemon has flushed its cache.)" << endl;
     cerr << "\t-m\tMinimun length (default " << MIN_LENGTH << ")" << endl;
     cerr << "\t-M\tMaximum length (default " << MAX_LENGTH << ")" << endl;
     

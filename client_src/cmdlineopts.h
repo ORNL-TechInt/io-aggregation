@@ -7,7 +7,7 @@
 
 // Default vaules
 #define ITERS       (10)        // Number of iterations 
-#define SLEEP_SECS  (60)        // Number of seconds to sleep 
+#define SLEEP_SECS  (-1)        // Number of seconds to sleep (-1 is automatic mode)
 #define MB          (1024*1024) // MB 
 #define MIN_LENGTH  (1 * MB)    // 1 MB 
 #define MAX_LENGTH  (128 * MB)  // 128 MB 
