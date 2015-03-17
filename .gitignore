@@ -1,3 +1,5 @@
 daemon
 new_test
+validate
 rank-*
+*.pyc

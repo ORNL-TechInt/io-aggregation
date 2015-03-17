@@ -38,14 +38,16 @@ DAEMON_SRC = cacheblock.cpp cci_util.cpp daemon.cpp daemoncmdlineopts.cpp gpumem
 NEW_TEST_DEPS = cci_msg.h cci_util.h cmdlineopts.h timing.h utils.h
 NEW_TEST_SRC = cci_util.cpp new_test.cpp utils.cpp cmdlineopts.cpp
 
-
+VALIDATE_DEPS = 
+VALIDATE_SRC = validate.cpp
 
 
 NEW_TEST_OBJS = $(patsubst %.cpp,obj/new_test/%.o,$(NEW_TEST_SRC))
 DAEMON_OBJS = $(patsubst %.cpp,obj/daemon/%.o,$(DAEMON_SRC))
+VALIDATE_OBJS = $(patsubst %.cpp,obj/%.o,$(VALIDATE_SRC))
 
 
-ALL: new_test daemon
+ALL: new_test daemon validate
 
 new_test: $(NEW_TEST_OBJS)
 	$(MPICC) -o $@ $^ $(LDFLAGS)
@@ -53,11 +55,17 @@ new_test: $(NEW_TEST_OBJS)
 daemon: $(DAEMON_OBJS)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
+validate: $(VALIDATE_OBJS)
+	$(CC) -o $@ $^ 
+
 $(NEW_TEST_OBJS):obj/new_test/%.o: %.cpp $(NEW_TEST_DEPS)
 	$(MPICC) -c -o $@ $< $(CFLAGS)
 
 $(DAEMON_OBJS):obj/daemon/%.o: %.cpp $(DAEMON_DEPS)
 	$(MPICC) -c -o $@ $< $(CFLAGS)
 
+$(VALIDATE_OBJS):obj/%.o: %.cpp $(VALIDATE_DEPS)
+	$(MPICC) -c -o $@ $< $(CFLAGS)
+
 clean:
-	rm -f new_test $(NEW_TEST_OBJS) daemon $(DAEMON_OBJS) *.dSYM
+	rm -f new_test $(NEW_TEST_OBJS) daemon $(DAEMON_OBJS) validate $(VALIDATE_OBJS) *.dSYM

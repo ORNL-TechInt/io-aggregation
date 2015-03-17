@@ -250,12 +250,24 @@ int main( int argc, char **argv)
 
 static void initBuffer(void *buf, size_t len, unsigned seed)
 {
-        unsigned *b = (unsigned *)buf;
-        size_t num_vals = len / sizeof( unsigned);
+        uint32_t *b = (uint32_t *)buf;
+        size_t num_vals = len / sizeof( uint32_t);
         for (size_t i = 0; i < num_vals; i++) {
                 b[i] = seed + i;
         }
 
+        // Add checksums every 1K to make it easier to
+        // verify the validity of the output files
+        uint32_t checksum = 0;
+        for (size_t i = 0; i < num_vals; i++) {
+                if ((i+1) % (1024 / sizeof( uint32_t)) == 0) {
+                    b[i] = checksum;
+                    checksum = 0;
+                } else {
+                    checksum += b[i];
+                }
+        }
+        
         return;
 }
 
