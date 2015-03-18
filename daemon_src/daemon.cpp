@@ -15,7 +15,12 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <string.h>
+#include <sys/syscall.h>
 #include <unistd.h>
+
+#ifdef __linux__
+  #include <sched.h>
+#endif
 
 #include <cuda_runtime.h>
 #include <cuda.h>
@@ -37,6 +42,9 @@ static int cciSetup( char **uri);
 
 // write the results for each rank
 static void printResults();
+
+// Attempt to set cpu affinity
+static void pinToCore( int core);
 
 // Handle all the CCI events
 static void commLoop();
@@ -96,6 +104,8 @@ int main(int argc, char *argv[])
     char hostname[64], uriFileName[128];
 #define MAX_THREADS 16  // can't see any reason why we'd ever have more than 4...
     pthread_t tids[MAX_THREADS];  // thread IDs for the write thread(s)
+    int threadCores[MAX_THREADS]; // which cores threads should pin to if
+                                  // thread pinning is turned on...
 
     CommandLineOptions cmdOpts;
     
@@ -182,16 +192,28 @@ int main(int argc, char *argv[])
         goto out;
     }
     
+    
+    // 0 tells the thread not to try to pin to a specific core
+    memset( threadCores, 0, sizeof( threadCores));
+    
     for (unsigned i=0; i < cmdOpts.writeThreads; i++) {
-        ret = pthread_create(&tids[i], NULL, writeThread, NULL);
+        if (cmdOpts.corePinning) {
+            // Set up core pinning: use odd-numbered cores, starting a 3
+            // (1 is used by the main thread) and don't go higher than 15
+            if (i <= 6) {
+                threadCores[i] = 3 + (2*i);
+            }
+        }
+        ret = pthread_create(&tids[i], NULL, writeThread, &threadCores[i]);
         if (ret) {
             cerr << "pthread_create() failed with " << strerror(ret) << endl;;
             goto out;
         }
     }
  
-    
-    //pin_to_core(1);
+    if (cmdOpts.corePinning) {
+        pinToCore(1);
+    }
 
     // Handle all the CCI events...
     commLoop();
@@ -324,8 +346,15 @@ out:
 // thread function for copying data out of cache and writing it to disk
 // also handles other tasks that could take a while, such as cleaning
 // the finished peers out of the peer list
-void *writeThread( void *)
+void *writeThread( void *arg)
 {
+    // If arg exists and is non-0, then it's the number of the core
+    // we should try to pin to
+    int *core = (int *)arg;
+    if (core && *core) {
+        pinToCore( *core);
+    }
+    
     while (!shuttingDown) {
         if (sem_wait( &writeThreadSem)) {
             if (errno == EINTR) {
@@ -714,4 +743,26 @@ static void printResults()
 }
 
 
+static void pinToCore(int core)
+{
+#ifdef __linux__
+        int ret = 0;
+        cpu_set_t cpuset;
+        pid_t tid;
+
+        tid = syscall(SYS_gettid);
+
+        CPU_ZERO(&cpuset);
+        CPU_SET(core, &cpuset);
+
+        cerr << __func__ << ": pinning tid " << tid << " to core " << core << endl;
+
+        ret = sched_setaffinity(tid, sizeof(cpu_set_t), &cpuset);
+        if (ret) {
+            cerr << __func__ << ": sched_setaffinity() failed with "
+                 << strerror( errno) << endl;
+        }
+#endif
+        return;
+}
 

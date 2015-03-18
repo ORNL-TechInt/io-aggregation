@@ -15,6 +15,7 @@ static struct option long_options[] = {
     {"gpu_ram",        required_argument, 0, 'G'},
     {"gpu_allocator",  required_argument, 0, 'A'},
     {"write_threads",  required_argument, 0, 'T'},
+    {"core_pinning",   no_argument,       0, 'P'},
     {0, 0, 0, 0} };
     
     
@@ -35,7 +36,7 @@ bool parseCmdLine( int argc, char **argv, CommandLineOptions &opts)
     {
         /* getopt_long stores the option index here. */
         int option_index = 0;
-        int c = getopt_long( argc, argv, "S:G:A:T:", long_options, &option_index);
+        int c = getopt_long( argc, argv, "S:G:A:T:P", long_options, &option_index);
 
         /* Detect the end of the options. */
         if (c == -1)
@@ -70,6 +71,9 @@ bool parseCmdLine( int argc, char **argv, CommandLineOptions &opts)
                 if (opts.writeThreads < 1) {
                     return false;
                 }
+                break;
+            case 'P':
+                opts.corePinning = true;
                 break;
                 
             default:  // unrecognized option
