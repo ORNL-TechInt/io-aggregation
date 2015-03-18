@@ -407,6 +407,13 @@ void *writeThread( void *arg)
                 Peer *peer = it->second;
                 if (peer->isDone()) {
                     peerList.erase( it);
+                    // Note: the iterator is now invalid! Reset it before
+                    // using it again.
+                    
+                    // writeStatistics() could take some time, so don't leave
+                    // the mutex locked (it will block the comm loop functions,
+                    // for example)
+                    pthread_mutex_unlock( &peerListMut);
                     peer->writeStatistics();
                     delete peer;
                     // NOTE: CacheBlock instances all have Peer pointers,
@@ -430,11 +437,19 @@ void *writeThread( void *arg)
                         // can shut down the whole daemon.
                         shuttingDown = true;
                     }
+                    
+                    // re-lock the mutex and get ourselves a new valid iterator
+                    // so we can keep working through the while loop
+                    pthread_mutex_lock( &peerListMut);
+                    it = peerList.begin();
+                    
+                } else {
+                    // This is in an else clause because we only want to increment
+                    // the iterator for cases where we didn't call erase.
+                    ++it;
                 }
-                it++;
             }  // end while()
             pthread_mutex_unlock( &peerListMut);
-
         }
         
     }
@@ -616,8 +631,10 @@ static void handleBye( const IoMsg *rx, cci_connection_t *conn)
     // Mark the appropriate peer object as done and then wake the
     // background thread.  (Don't want to tie up the comm loop
     // handling tasks that might take a little time.)
+    pthread_mutex_lock( &peerListMut);
     Peer *peer = peerList[conn];
     peer->setDone( true);
+    pthread_mutex_unlock( &peerListMut);
     sem_post( &writeThreadSem);
 }
 
