@@ -37,7 +37,7 @@ cci_rma_handle_t *local = NULL;
 
 // Start exactly one daemon process per host
 // Returns 0 on success, ERRNO on failure
-int startOneDaemon( char **daemonArgs)
+int startOneDaemon( char * const * daemonArgs)
 {
     // We want one daemon per node.  There's no guaranteed mapping between
     // nodes and ranks.  So, all ranks attemtp to exclusively create a file.

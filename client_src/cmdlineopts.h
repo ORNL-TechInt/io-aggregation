@@ -5,18 +5,21 @@
 
 #include <stdlib.h>
 
+#include <vector>
+#include <string>
+
 // Default vaules
-#define ITERS       (10)        // Number of iterations 
-#define SLEEP_SECS  (-1)        // Number of seconds to sleep (-1 is automatic mode)
-#define MB          (1024*1024) // MB 
-#define MIN_LENGTH  (1 * MB)    // 1 MB 
-#define MAX_LENGTH  (128 * MB)  // 128 MB 
-#define EXTRA_RAM   0           // in MB 
-#define NULL_IO     false       // use null io option
-#define CLIENT_BLOCKING false   // use CCI blocking mode on the client
-#define DAEMON_BLOCKING false   // use CCI blocking mode on the server
-#define USE_DAEMON  false       // whether or not to hand writes off to the daemon process
-#define DAEMON_AUTOSTART true   // automatically start the daemon
+#define ITERS            (10)        // Number of iterations 
+#define SLEEP_SECS       (-1)        // Number of seconds to sleep (-1 is automatic mode)
+#define MB               (1024*1024) // MB 
+#define MIN_LENGTH       (1 * MB)    // 1 MB 
+#define MAX_LENGTH       (128 * MB)  // 128 MB 
+#define EXTRA_RAM        0           // in MB 
+#define NULL_IO          false       // use null io option
+#define CLIENT_BLOCKING  false       // use CCI blocking mode on the client
+#define DAEMON_BLOCKING  false       // use CCI blocking mode on the server
+#define USE_DAEMON       false       // whether or not to hand writes off to the daemon process
+#define DAEMON_AUTOSTART true        // automatically start the daemon
 struct CommandLineOptions {
 
     unsigned iters;
@@ -30,13 +33,22 @@ struct CommandLineOptions {
     size_t rmaBuf;  // in megabytes
     bool useDaemon;
     bool daemonAutostart;
+    char **daemonArgs;   
+
+    CommandLineOptions();
+    ~CommandLineOptions();
     
+    void addDaemonArg( const char*);
+    char ** getDaemonArgs() { return daemonArgs; }
+    // storing the daemon arguments in a string vector would be far more
+    // convenient, but unfortunately execve() takes a char * const *. ie:
+    // The actual argument values must be mutable.  Since string::c_str()
+    // returns a const char *, we can't use strings and thus get to do
+    // everything the hard way...
+     
+private:
     
-    CommandLineOptions() :
-     iters(ITERS), sleepSecs(SLEEP_SECS), minLen(MIN_LENGTH), maxLen(MAX_LENGTH),
-     extraRam(EXTRA_RAM), nullIo(NULL_IO), clientBlocking(CLIENT_BLOCKING),
-     daemonBlocking(DAEMON_BLOCKING), rmaBuf(MAX_LENGTH / (1024*1024)),
-     useDaemon( USE_DAEMON), daemonAutostart(DAEMON_AUTOSTART) { }
+    unsigned curDaemonArgs, maxDaemonArgs;
     
 };
 

@@ -104,18 +104,13 @@ int main( int argc, char **argv)
     if (cmdOpts.useDaemon) {
         int rc = 0;
         if (cmdOpts.daemonAutostart) {
-            char **daemonArgs = new char *[2];
-            daemonArgs[0] = (char *)"daemon";
-            daemonArgs[1] = NULL;
-            rc = startOneDaemon( daemonArgs);
+            rc = startOneDaemon( cmdOpts.getDaemonArgs());
             if (rc) {
                 cerr << "System error " << rc << " starting daemon: " 
                      << strerror( rc) << endl;
                 cerr << "Aborting" << endl;
                 return -1;
             }
-            
-            delete[] daemonArgs;
         }
         
         rc = initIo(buf, cmdOpts.maxLen, rank);
@@ -181,11 +176,14 @@ int main( int argc, char **argv)
             // If we're in automatic mode, check with the daemon for the
             // cache usage.  Otherwise, sleep for a fixed amount of time
             if (cmdOpts.sleepSecs == -1) {
-                bool isEmpty = false;
-                checkCacheUsage( &isEmpty);
-                while ( ! isEmpty) {
-                    usleep( 100 * 1000);
+                if (cmdOpts.useDaemon) {
+                // can't call checkCacheUsage() if there's no daemon
+                    bool isEmpty = false;
                     checkCacheUsage( &isEmpty);
+                    while ( ! isEmpty) {
+                        usleep( 100 * 1000);
+                        checkCacheUsage( &isEmpty);
+                    }
                 }
                 
                 sync();  // daemon's cache is empty - this flushes the OS pagecache
