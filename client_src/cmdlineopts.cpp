@@ -49,10 +49,10 @@ bool parseCmdLine( int argc, char **argv, CommandLineOptions &opts)
                 opts.sleepSecs = atoi( optarg);
                 break;
             case 'm':
-                opts.minLen = atoi(optarg);
+                opts.minLen = atol(optarg);
                 break;
             case 'M':
-                opts.maxLen = atoi(optarg);
+                opts.maxLen = atol(optarg);
                 break;
             case 'b':
                 opts.clientBlocking = true;
@@ -67,7 +67,7 @@ bool parseCmdLine( int argc, char **argv, CommandLineOptions &opts)
                 opts.extraRam = atoi(optarg);
                 break;
             case 'r':
-                opts.rmaBuf = atoi(optarg);
+                opts.rmaBuf = atol(optarg);
                 break;
             case 'd':
                 opts.useDaemon = true;
