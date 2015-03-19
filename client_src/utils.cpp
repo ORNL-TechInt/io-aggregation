@@ -27,7 +27,7 @@ extern char **environ;
 static void handleSigchld( int sig);
 
 // variables that will need to be shared by multiple functions in this .cpp file
-pid_t daemonPid;  // Process ID of the daemon
+pid_t daemonPid = -1;  // Process ID of the daemon
 cci_endpoint_t *endpoint = NULL;
 cci_os_handle_t *endpointFd = NULL; // file descriptor that can block waiting for
                                     // progress on the endpoint
@@ -236,6 +236,7 @@ int finalizeIo(void)
         }
     }
 
+    
     if (local) {
         ret = cci_rma_deregister(endpoint, local);
         if (ret) {
@@ -250,6 +251,7 @@ int finalizeIo(void)
         }
     }
 
+    cerr << "Client: about to call cci_finalize()" << endl;
     ret = cci_finalize();
     if (ret) {
         cciDbgMsg("cci_finalize()", ret);
@@ -258,6 +260,7 @@ int finalizeIo(void)
     // The daemon should shut down on its own (once it's written all the
     // dirty cache to disk) - wait for it...
     if (daemonPid != -1) {
+        cerr << "Client: about to call waitpid() on PID " << daemonPid << endl;
         //signal(SIGCHLD, SIG_IGN);
         //kill(daemonPid, SIGKILL);
         waitpid(daemonPid, NULL, 0);

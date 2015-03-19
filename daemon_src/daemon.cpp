@@ -28,6 +28,7 @@
 #include <deque>
 #include <fstream>
 #include <iostream>
+#include <iomanip>
 #include <map>
 #include <sstream>
 using namespace std;
@@ -728,7 +729,7 @@ static void printResults()
     while (it != peerList.end()) {
         Peer *peer = it->second;
         ostringstream fname("");
-        fname << "rank-" << peer->m_rank << "-iod";
+        fname << "rank-" << setfill('0') << setw(4) << peer->m_rank << "-iod";
         out.open( fname.str().c_str());
         if (! out) {
             cerr << "Failed to open " << fname.str()

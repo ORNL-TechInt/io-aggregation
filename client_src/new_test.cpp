@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <sstream>
 #include <vector>
@@ -60,6 +61,19 @@ int main( int argc, char **argv)
              << "Aborting!" << endl;
         return -1;
     }
+    
+    // If we need to start the daemon, do it *BEFORE* calling MPI_Init()
+    // (Apparently, calling fork() after MPI has started is something the
+    // MPI developers discourage...
+    if (cmdOpts.useDaemon && cmdOpts.daemonAutostart) {
+        int rc = startOneDaemon( cmdOpts.getDaemonArgs());
+        if (rc) {
+            cerr << "System error " << rc << " starting daemon: " 
+                    << strerror( rc) << endl;
+            cerr << "Aborting" << endl;
+            return -1;
+        }
+    }
 
     // MPI initialization stuff
     MPI_Init(&argc, &argv);
@@ -90,7 +104,7 @@ int main( int argc, char **argv)
     // If we're not using the daemon, we'll need a file we can write to
     if (cmdOpts.useDaemon == false) {
         fname.str("");
-        fname << "rank-" << rank << "-data";
+        fname << "rank-" << setfill('0') << setw(4) << rank << "-data";
         outf.open(fname.str().c_str());
         
         if (!outf) {
@@ -100,21 +114,10 @@ int main( int argc, char **argv)
         }
     }
         
-    // Initialize CCI & start up the daemon
+    // Initialize CCI
     if (cmdOpts.useDaemon) {
-        int rc = 0;
-        if (cmdOpts.daemonAutostart) {
-            rc = startOneDaemon( cmdOpts.getDaemonArgs());
-            if (rc) {
-                cerr << "System error " << rc << " starting daemon: " 
-                     << strerror( rc) << endl;
-                cerr << "Aborting" << endl;
-                return -1;
-            }
-        }
-        
-        rc = initIo(buf, cmdOpts.maxLen, rank);
-        if (rc) {         
+        int rc = initIo(buf, cmdOpts.maxLen, rank);
+        if (rc) {
             cerr << "CCI error " << rc << " during initialization: " 
                  << cci_strerror( NULL,(cci_status)rc) << endl;
             cerr << "Aborting" << endl;
@@ -207,7 +210,7 @@ int main( int argc, char **argv)
 
     // Write the time stamp data out to a file
     fname.str("");
-    fname << "rank-" << rank;
+    fname << "rank-" << setfill('0') << setw(4) << rank;
     outf.open( fname.str().c_str());
     if (outf) {
         for (unsigned i=0; i < timeStamps.size(); i++) {

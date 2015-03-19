@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <sstream>
 using namespace std;
@@ -18,7 +19,7 @@ Peer::Peer( uint32_t rank)
 
     // Open the output file
     ostringstream fname("");
-    fname << "rank-" << rank << "-iod-data";
+    fname << "rank-" << setfill('0') << setw(4) << rank << "-iod-data";
     m_outf.open( fname.str().c_str());
     if (!m_outf.good()) {
         cerr << "Failed to open " << fname.str() << "!  Aborting!!" << endl;
@@ -53,7 +54,7 @@ Peer::~Peer()
 void Peer::writeStatistics()
 {
     ostringstream fname("");
-    fname << "rank-" << m_rank << "-iod";
+    fname << "rank-" << setfill('0') << setw(4) << m_rank << "-iod";
     ofstream outf( fname.str().c_str());
     
     if (! outf.good()) {
