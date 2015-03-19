@@ -58,7 +58,7 @@ union IoMsg {
         bool      gpuMem;  // write to GPU mem?
         uint64_t  len;     // how much data can be written (in bytes)
         
-        uint32_t offset;  // where to RMA the data to (*if* we're using RMA)
+        uint64_t offset;  // where to RMA the data to (*if* we're using RMA)
         cudaIpcMemHandle_t   memHandle;  // if we're using CUDA
         // Note: We should probably use a union - we'll either
         // need the cuda handle or the offset, but not both.

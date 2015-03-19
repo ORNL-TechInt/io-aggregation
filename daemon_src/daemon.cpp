@@ -526,7 +526,7 @@ static void handleWriteRequest( const IoMsg *rx, cci_connection_t *conn)
     IoStats stats( rx->writeRequest.len);  
        
     // Allocate some memory
-    uint32_t len;
+    uint64_t len;
     void *memPtr;
     len = gpuAlloc( &memPtr, rx->writeRequest.len);
     // Note: len may actually be 0 here!  In such a case, the

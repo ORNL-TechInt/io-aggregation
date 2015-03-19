@@ -69,7 +69,7 @@ int startOneDaemon( char * const * daemonArgs)
 
 // Start up the daemon and set up the CCI connection
 // Returns a cci_status value, or a negated errno value (ie: -22 for EINVAL)
-int initIo(void *buffer, uint32_t len, uint32_t rank)
+int initIo(void *buffer, uint64_t len, uint32_t rank)
 {
     int ret = CCI_SUCCESS;
     uint32_t caps = 0;
@@ -102,7 +102,7 @@ int initIo(void *buffer, uint32_t len, uint32_t rank)
         goto out;
     }
 
-    ret = cci_rma_register(endpoint, buffer, (uint64_t)len,
+    ret = cci_rma_register(endpoint, buffer, len,
             CCI_FLAG_WRITE|CCI_FLAG_READ, &local);
     if (ret) {
         cciDbgMsg( "cci_rma_register()", ret);
