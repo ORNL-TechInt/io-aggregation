@@ -84,7 +84,7 @@ int main( int argc, char **argv)
     unsigned char* buf;
     bool bufIsPinned = false;
     
-#ifndef DISABLE_DAEMON_PINNED_MEMORY
+#ifndef DISABLE_CLIENT_PINNED_MEMORY
     cudaError_t cudaErr = cudaMallocHost( &buf, cmdOpts.maxLen);
     if (cudaErr == cudaSuccess) {
         bufIsPinned = true;
