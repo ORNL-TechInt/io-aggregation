@@ -41,8 +41,9 @@ using namespace std;
 // will be written to it.
 static int cciSetup( char **uri);
 
+// Commented out for now - the Peer class handles writing statistics
 // write the results for each rank
-static void printResults();
+//static void printResults();
 
 // Attempt to set cpu affinity
 static void pinToCore( int core);
@@ -235,8 +236,6 @@ int main(int argc, char *argv[])
         }
     }
 
-    // Write out the stats for the completed I/O requests
-    printResults();
     
     out:
     
@@ -719,6 +718,36 @@ static void commLoop()
     return;
 }
 
+
+static void pinToCore(int core)
+{
+#ifdef __linux__
+        int ret = 0;
+        cpu_set_t cpuset;
+        pid_t tid;
+
+        tid = syscall(SYS_gettid);
+
+        CPU_ZERO(&cpuset);
+        CPU_SET(core, &cpuset);
+
+        cerr << __func__ << ": pinning tid " << tid << " to core " << core << endl;
+
+        ret = sched_setaffinity(tid, sizeof(cpu_set_t), &cpuset);
+        if (ret) {
+            cerr << __func__ << ": sched_setaffinity() failed with "
+                 << strerror( errno) << endl;
+        }
+#endif
+        return;
+}
+
+#if 0
+
+Commented out for now
+I don't think we need it, and by the time it was actually being called, the peerList
+was already empty.
+
 static void printResults()
 {
     
@@ -760,27 +789,5 @@ static void printResults()
     return;
 }
 
-
-static void pinToCore(int core)
-{
-#ifdef __linux__
-        int ret = 0;
-        cpu_set_t cpuset;
-        pid_t tid;
-
-        tid = syscall(SYS_gettid);
-
-        CPU_ZERO(&cpuset);
-        CPU_SET(core, &cpuset);
-
-        cerr << __func__ << ": pinning tid " << tid << " to core " << core << endl;
-
-        ret = sched_setaffinity(tid, sizeof(cpu_set_t), &cpuset);
-        if (ret) {
-            cerr << __func__ << ": sched_setaffinity() failed with "
-                 << strerror( errno) << endl;
-        }
 #endif
-        return;
-}
 
