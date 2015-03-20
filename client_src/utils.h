@@ -31,7 +31,7 @@ int writeLocal(void *buf, std::streamsize len, std::ofstream &outf);
 // Write to the remote daemon (either the GPU or system ram depending
 // on what the daemon tells us).
 // returns a CCI_STATUS
-int writeRemote(void *buf, size_t len, size_t *bytesWritten);
+int writeRemote(void *buf, size_t len, size_t offset, size_t *bytesWritten);
 
 // Get the cache usage data from the daemon
 // returns a CCI_STATUS.  

@@ -305,7 +305,7 @@ int writeLocal(void *buf, streamsize len, ofstream &outf)
 // on what the daemon tells us).
 // returns a CCI_STATUS.  Number of bytes written (which may be less
 // than len, will be returned in bytesWritten)
-int writeRemote(void *buf, size_t len, size_t *bytesWritten)
+int writeRemote(void *buf, size_t len, size_t offset, size_t *bytesWritten)
 {   
 
     int ret = 0;
@@ -315,7 +315,7 @@ int writeRemote(void *buf, size_t len, size_t *bytesWritten)
     IoMsg sndMsg, replyMsg;
     sndMsg.writeRequest.type = WRITE_REQ;
     sndMsg.writeRequest.len = len;
-    sndMsg.writeRequest.offset = 0;
+    sndMsg.writeRequest.offset = offset;
        
     ret = cci_send( connection, &sndMsg, sizeof( sndMsg.writeRequest), &sndMsg, CCI_FLAG_NO_COPY);
     // Note: using the address of the buffer as the context...

@@ -150,7 +150,8 @@ int main( int argc, char **argv)
                 size_t bytesWritten;
                 while (totalBytesWritten < len) {
                     size_t bytesToWrite = len - totalBytesWritten;
-                    writeRemote( &buf[totalBytesWritten], bytesToWrite, &bytesWritten);
+                    writeRemote( &buf[totalBytesWritten], bytesToWrite,
+                                 totalBytesWritten, &bytesWritten);
                     if (bytesWritten == 0) {
                         // Out of space in the GPU memory - sleep briefly to
                         // keep from thrashing the system with write requests
