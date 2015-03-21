@@ -98,6 +98,8 @@ void printUsage(char *name)
     cerr << "\t-G\tAmount of GPU ram to use for cache (in MB)." << endl
          << "\t\t0 for no GPU ram cache, -1 for unlimited. Default: "
          << MAX_GPU_RAM << endl;
+    cerr << "\t-P\tAttempt to pin threads to specific odd-numbered cores"
+         << endl;
     cerr << "\t-T\tNumber of background write threads. Default: " << WRITE_THREADS << endl;
     cerr << "\t-A\tSelect allocator for GPU memory.  Valid options are:" << endl;
     cerr << "\t\t1 - First come, first served allocator" << endl;
