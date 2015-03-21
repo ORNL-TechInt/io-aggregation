@@ -29,8 +29,9 @@ uint64_t allocate_fcfs( void **devPtr, uint64_t reqLen)
 //             << "MB.  (" << (freeMem / (1024*1024)) << "MB free.)" << endl;
     
     if (freeMem < INACCESSIBLE_GPU_MEM) {
-        cerr << __func__ << ": Not enough free GPU mem to bother with a "
-             << "malloc attempt."  << endl;
+// Commented out message - too much output
+//        cerr << __func__ << ": Not enough free GPU mem to bother with a "
+//             << "malloc attempt."  << endl;
              return 0;
     }
     freeMem -= INACCESSIBLE_GPU_MEM;
