@@ -79,19 +79,30 @@ def plot_per_rank_bw( conn, num_write_threads):
             averages.append( np.average( length_dict[k]))
         
         
+        # I want to display min & max values as error bars on
+        # each main bar.  MatPlotLib can do this, but it treats
+        # the upper & lower error values as values to be added
+        # or subtracted from the main value.  Hence the next two
+        # lines
+        low_err = np.array(averages) - np.array(mins)
+        high_err = np.array(maxes) - np.array(averages)
+        
         # debugging:
         print "Mins:", mins
         print "Maxes:", maxes
         print "Averages:", averages
+        print "Low error:", low_err
+        print "High error:", high_err
         
         # plot the data
         ind = np.arange(len(mins))  # the x locations for the groups
-        rects.append( ax.bar(ind + (width*i), averages, width, color=colors[i]))
+        rects.append( ax.bar(ind + (width*i), averages, width,
+                             color=colors[i], yerr=[low_err,high_err]))
     
     
     # add some text for labels, title and axes ticks
     ax.set_ylabel('Bandwidth (MB/s)')
-    ax.set_title('Per-Rank Bandwidth vs. Write Size')
+    ax.set_title('Average Per-Rank Bandwidth vs. Write Size')
     ax.set_xticks(ind+width)
     ax.set_xticklabels( x_vals)
     ax.set_xlabel( 'Write size (MB)')
@@ -177,19 +188,30 @@ def plot_per_node_bw( conn, num_write_threads):
             averages.append( np.average( length_dict[k]))
         
         
+        # I want to display min & max values as error bars on
+        # each main bar.  MatPlotLib can do this, but it treats
+        # the upper & lower error values as values to be added
+        # or subtracted from the main value.  Hence the next two
+        # lines
+        low_err = np.array(averages) - np.array(mins)
+        high_err = np.array(maxes) - np.array(averages)
+        
         # debugging:
         print "Mins:", mins
         print "Maxes:", maxes
         print "Averages:", averages
+        print "Low error:", low_err
+        print "High error:", high_err
         
         # plot the data
         ind = np.arange(len(mins))  # the x locations for the groups
-        rects.append( ax.bar(ind + (width*i), averages, width, color=colors[i]))
+        rects.append( ax.bar(ind + (width*i), averages, width,
+                             color=colors[i], yerr=[low_err,high_err]))
     
     
     # add some text for labels, title and axes ticks
     ax.set_ylabel('Bandwidth (MB/s)')
-    ax.set_title('Per-Node Bandwidth vs. Write Size')
+    ax.set_title('Average Per-Node Bandwidth vs. Write Size')
     ax.set_xticks(ind+width)
     ax.set_xticklabels( x_vals)
     ax.set_xlabel( 'Write size (MB)')
