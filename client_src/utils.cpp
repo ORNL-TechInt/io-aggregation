@@ -261,7 +261,7 @@ int finalizeIo(void)
     // dirty cache to disk) - wait for it...
     if (daemonPid != -1) {
         cerr << "Client: about to call waitpid() on PID " << daemonPid << endl;
-        //signal(SIGCHLD, SIG_IGN);
+        signal(SIGCHLD, SIG_IGN);
         //kill(daemonPid, SIGKILL);
         waitpid(daemonPid, NULL, 0);
         
