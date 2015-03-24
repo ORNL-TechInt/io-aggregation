@@ -144,7 +144,8 @@ def main():
         conn = sqlite3.connect( options.db_file)
         # connect to the existing db
               
-    
+
+    pu.plot_per_node_bw_non_gpu( conn, 2)
     pu.plot_per_rank_bw( conn, 2)
     pu.plot_per_node_bw( conn, 2)
 
