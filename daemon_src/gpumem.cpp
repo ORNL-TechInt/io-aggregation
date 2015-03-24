@@ -97,7 +97,18 @@ uint64_t allocate_block( void **devPtr, uint64_t reqLen)
         
     uint64_t attemptedLen = (reqLen < BLOCK_SIZE) ? reqLen : BLOCK_SIZE;
     
-    CUDA_CHECK_RETURN( cudaMalloc( devPtr, attemptedLen));
+    cudaError_t cudaErr = cudaMalloc( devPtr, attemptedLen);
+    if ( cudaErr != cudaSuccess) {
+        cerr << __func__ << ":" << __LINE__ 
+             << " cudaMalloc() failed - " <<  cudaGetErrorString( cudaErr)
+             << endl
+             << "Returning 0 and continuing." << endl
+             << "NOTE: This shouldn't happen! Potential out-of-memory "
+             << "conditions should have been caught before calling "
+             << "cudaMalloc()!" << endl;       
+        return 0;
+    }
+    
     return attemptedLen;
 }
 
