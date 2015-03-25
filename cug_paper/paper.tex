@@ -348,6 +348,10 @@
 \hyphenation{op-tical net-works semi-conduc-tor}
 
 
+% ToDo notes - useful when authors are composing the document
+\usepackage[colorinlistoftodos]{todonotes}
+
+
 \begin{document}
 %
 % paper title
@@ -402,10 +406,16 @@ Email: atchleyes@ornl.gov}
 %\IEEEspecialpapernotice{(Invited Paper)}
 
 
+\listoftodos
+\newpage             
+
 
 
 % make the title area
 \maketitle
+
+\todo[inline]{THIS IS A DRAFT! Make sure you search all the .tex files for any more "\textbackslash{}todo" blocks before removing this one.}
+
 
 
 \begin{abstract}
