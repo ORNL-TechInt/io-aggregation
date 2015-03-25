@@ -17,7 +17,6 @@ static struct option long_options[] = {
     {"min_len",          required_argument, 0, 'm'},
     {"max_len",          required_argument, 0, 'M'},
     {"client_blocking",  no_argument,       0, 'b'},
-    {"daemon_blocking",  no_argument,       0, 'B'},
     {"null_io",          no_argument,       0, 'n'},
     {"extra_ram",        required_argument, 0, 'e'},
     {"rma_buf",          required_argument, 0, 'r'},
@@ -33,7 +32,7 @@ bool parseCmdLine( int argc, char **argv, CommandLineOptions &opts)
     {
         /* getopt_long stores the option index here. */
         int option_index = 0;
-        int c = getopt_long( argc, argv, "i:s:m:M:bBne:r:dD:N", long_options, &option_index);
+        int c = getopt_long( argc, argv, "i:s:m:M:bne:r:dD:N", long_options, &option_index);
 
         /* Detect the end of the options. */
         if (c == -1)
@@ -56,9 +55,6 @@ bool parseCmdLine( int argc, char **argv, CommandLineOptions &opts)
                 break;
             case 'b':
                 opts.clientBlocking = true;
-                break;
-            case 'B':
-                opts.daemonBlocking = true;
                 break;
             case 'n':
                 opts.nullIo = true;
@@ -116,7 +112,6 @@ void printUsage(char *name)
     cerr << "\t-N\tDisable automatic startup of the remote daemon" << endl
          << "\t\t(Useful if running the daemon in the debugger.)" << endl;
     cerr << "** NOT IMPLEMENTED **" << "\t-b\tUse CCI blocking mode on client" << endl;
-    cerr << "** NOT IMPLEMENTED **" << "\t-B\tUse CCI blocking mode on iod daemon" << endl;
     cerr << "** NOT IMPLEMENTED **" << "\t-N\tUse NULL IO on iod daemon" << endl;
     cerr << endl;
     cerr << "A note about passing parameters to the daemon:  be sure to include the " << endl
@@ -131,7 +126,7 @@ void printUsage(char *name)
 CommandLineOptions::CommandLineOptions() :
      iters(ITERS), sleepSecs(SLEEP_SECS), minLen(MIN_LENGTH), maxLen(MAX_LENGTH),
      extraRam(EXTRA_RAM), nullIo(NULL_IO), clientBlocking(CLIENT_BLOCKING),
-     daemonBlocking(DAEMON_BLOCKING), rmaBuf(MAX_LENGTH / (1024*1024)),
+     rmaBuf(MAX_LENGTH / (1024*1024)),
      useDaemon( USE_DAEMON), daemonAutostart(DAEMON_AUTOSTART)
 { 
     // Initialize the daemonArgs array...

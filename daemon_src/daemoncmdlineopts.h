@@ -13,7 +13,7 @@
 #define DEFAULT_ALLOC    allocate_fcfs  // "First come / first served" allocation
 #define WRITE_THREADS    1 // one background write thread
 #define CORE_PINNING     false 
-// TODO: Do we need an option for blocking mode?
+#define BLOCKING_MODE    false
 
 struct CommandLineOptions {
     // cache sizes
@@ -25,10 +25,10 @@ struct CommandLineOptions {
                         // Pointer to GPU mem allocation functions
     
     bool corePinning;  // Attempt to pin threads to odd numbered cores?
-    
+    bool blockingMode; // Run the comm loop in blocking mode    
     CommandLineOptions() : maxSysRam(MAX_SYS_RAM), maxGpuRam(MAX_GPU_RAM),
                            writeThreads( WRITE_THREADS), gpuAlloc( DEFAULT_ALLOC),
-                           corePinning( CORE_PINNING) { }
+                           corePinning( CORE_PINNING), blockingMode(BLOCKING_MODE) { }
     
 };
 

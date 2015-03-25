@@ -4,6 +4,7 @@
 #ifndef _UTILS_H_
 #define _UTILS_H_
 
+#include <cci.h>
 #include <string.h>
 #include <stdint.h>
 
@@ -17,7 +18,9 @@ int startOneDaemon( char * const * daemonArgs);
 
 // Set up the CCI connection
 // Returns a cci_status value, or a negated errno value (ie: -22 for EINVAL)
-int initIo( void *buffer, uint64_t len, uint32_t rank);
+// If endpointFD is non-NULL, the function will return file descriptor that can
+//  block waiting for progress on the endpoint
+int initIo( void *buffer, uint64_t len, uint32_t rank, cci_os_handle_t *endpointFd=NULL); 
 
 // Shut down the CCI connection
 // Note: doesn't touch the daemon.  (Presumably, it will shut itself down.)

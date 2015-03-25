@@ -16,6 +16,7 @@ static struct option long_options[] = {
     {"gpu_allocator",  required_argument, 0, 'A'},
     {"write_threads",  required_argument, 0, 'T'},
     {"core_pinning",   no_argument,       0, 'P'},
+    {"blocking_mode",  no_argument,       0, 'B'},
     {0, 0, 0, 0} };
     
     
@@ -36,7 +37,7 @@ bool parseCmdLine( int argc, char **argv, CommandLineOptions &opts)
     {
         /* getopt_long stores the option index here. */
         int option_index = 0;
-        int c = getopt_long( argc, argv, "S:G:A:T:P", long_options, &option_index);
+        int c = getopt_long( argc, argv, "S:G:A:T:PB", long_options, &option_index);
 
         /* Detect the end of the options. */
         if (c == -1)
@@ -75,6 +76,9 @@ bool parseCmdLine( int argc, char **argv, CommandLineOptions &opts)
             case 'P':
                 opts.corePinning = true;
                 break;
+            case 'B':
+                opts.blockingMode = true;
+                break;
                 
             default:  // unrecognized option
                 return false;
@@ -100,6 +104,8 @@ void printUsage(char *name)
          << MAX_GPU_RAM << endl;
     cerr << "\t-P\tAttempt to pin threads to specific odd-numbered cores"
          << endl;
+    cerr << "\t-B\tBlocking mode: the event loop blocks waiting for events, instead of polling" << endl;
+    cerr << "\tWARNING: Blocking mode is untested!  It requires an experimental version of CCI!" << endl;
     cerr << "\t-T\tNumber of background write threads. Default: " << WRITE_THREADS << endl;
     cerr << "\t-A\tSelect allocator for GPU memory.  Valid options are:" << endl;
     cerr << "\t\t1 - First come, first served allocator" << endl;

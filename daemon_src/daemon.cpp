@@ -12,6 +12,7 @@
 
 #include <assert.h>
 #include <cci.h>
+#include <poll.h>
 #include <pthread.h>
 #include <semaphore.h>
 #include <string.h>
@@ -49,7 +50,7 @@ static int cciSetup( char **uri);
 static void pinToCore( int core);
 
 // Handle all the CCI events
-static void commLoop();
+static void commLoop( int fd=-1);
 
 // thread function for copying data out of cache and writing it to disk
 void *writeThread( void *);
@@ -119,6 +120,12 @@ int main(int argc, char *argv[])
     
     gpuAlloc = cmdOpts.gpuAlloc;
     
+    //TODO: Clean this up.  Get rid of the global variable!
+    int eventBlockingFd;
+    if (cmdOpts.blockingMode) {
+        endpointFd = &eventBlockingFd;
+    }
+
     ret = cciSetup( &uri);
 
     memset(hostname, 0, sizeof(hostname));
@@ -677,12 +684,22 @@ static void handleSend( cci_event_t * event)
 
 
 // Handle all the CCI events
-static void commLoop()
+static void commLoop( int fd)
 {
     int ret = 0;
     cci_event_t *event = NULL;
-        
+    struct pollfd pfd;
+
+    if (fd > 0) {
+        // if we were passed a file descriptor, setup to poll it
+        pfd.fd = fd;
+        pfd.events = POLLIN;
+    }
+
     while (!shuttingDown) {
+        if (fd > 0) {
+            poll(&pfd, 1, 500); // wake up after 500ms (so we can check for shutdown)
+	}
         ret = cci_get_event(endpoint, &event);
         if (ret) { 
             if (ret != CCI_EAGAIN) {

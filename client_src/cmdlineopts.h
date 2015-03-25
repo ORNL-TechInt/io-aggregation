@@ -17,7 +17,6 @@
 #define EXTRA_RAM        0           // in MB 
 #define NULL_IO          false       // use null io option
 #define CLIENT_BLOCKING  false       // use CCI blocking mode on the client
-#define DAEMON_BLOCKING  false       // use CCI blocking mode on the server
 #define USE_DAEMON       false       // whether or not to hand writes off to the daemon process
 #define DAEMON_AUTOSTART true        // automatically start the daemon
 struct CommandLineOptions {
@@ -29,7 +28,6 @@ struct CommandLineOptions {
     int extraRam;  // in megabytes
     bool nullIo;
     bool clientBlocking;
-    bool daemonBlocking;
     size_t rmaBuf;  // in megabytes
     bool useDaemon;
     bool daemonAutostart;

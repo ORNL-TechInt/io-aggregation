@@ -29,8 +29,6 @@ static void handleSigchld( int sig);
 // variables that will need to be shared by multiple functions in this .cpp file
 pid_t daemonPid = -1;  // Process ID of the daemon
 cci_endpoint_t *endpoint = NULL;
-cci_os_handle_t *endpointFd = NULL; // file descriptor that can block waiting for
-                                    // progress on the endpoint
 cci_connection_t *connection = NULL;
 cci_rma_handle_t *local = NULL;
      
@@ -69,7 +67,7 @@ int startOneDaemon( char * const * daemonArgs)
 
 // Start up the daemon and set up the CCI connection
 // Returns a cci_status value, or a negated errno value (ie: -22 for EINVAL)
-int initIo(void *buffer, uint64_t len, uint32_t rank)
+int initIo(void *buffer, uint64_t len, uint32_t rank, cci_os_handle_t *endpointFd)
 {
     int ret = CCI_SUCCESS;
     uint32_t caps = 0;
