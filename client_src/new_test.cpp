@@ -179,18 +179,19 @@ int main( int argc, char **argv)
             // Wait for the cache to drain (by sleeping)
             // If we're in automatic mode, check with the daemon for the
             // cache usage.  Otherwise, sleep for a fixed amount of time
-            if (cmdOpts.sleepSecs == -1) {
+            if (cmdOpts.sleepSecs < 0) {
                 if (cmdOpts.useDaemon) {
                 // can't call checkCacheUsage() if there's no daemon
                     bool isEmpty = false;
                     checkCacheUsage( &isEmpty);
                     while ( ! isEmpty) {
-                        usleep( 100 * 1000);
+                        usleep( 10 * 1000);
                         checkCacheUsage( &isEmpty);
                     }
                 }
                 
                 sync();  // daemon's cache is empty - this flushes the OS pagecache
+                sleep( cmdOpts.sleepSecs * -1);  // give the OS pagecache time to drain
             } else if (cmdOpts.sleepSecs > 0) {
                 sleep( cmdOpts.sleepSecs);
             }
