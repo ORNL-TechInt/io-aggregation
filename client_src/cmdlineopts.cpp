@@ -84,6 +84,17 @@ bool parseCmdLine( int argc, char **argv, CommandLineOptions &opts)
                 
         }
     } // end while(1)
+    
+    // Check for any 'extra' positional arguments (ie: ones that didn't
+    // start with '-' or '--'
+    if (optind != argc) {
+        cerr << "WARNING (" << argv[0] << "): Unexpected positional arguments: ";
+        for (int i=optind; i < argc; i++) {
+            cerr << argv[i] << " ";
+        }
+        cerr << endl;
+        cerr << "Did you forget a '-' character?" << endl;
+    }
 // TODO: We ought to add some code to validate the options we've got - there's a numer
 // of combinations that are invalid (ex: sleepSecs of -1 requires useDaemon)
     return true;  // no parse errors
