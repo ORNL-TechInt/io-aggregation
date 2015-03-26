@@ -13,6 +13,31 @@ ifndef CUDA_HOME
 $(error Export path to CUDA installation in variable named CUDA_HOME)
 endif
 
+# Assuming the build computer has git installed, figure out the
+# commit hash we're building
+define SHELL_SCRIPT
+HASH=`git show --oneline -s HEAD | cut -f1 -d' '`;
+MODIFIED="";
+for i in `git status | grep modified | cut -f2 -d':'`;
+do
+  MODIFIED="$$MODIFIED $$i";
+done;
+if [ ! -z "$$MODIFIED" ];
+then
+  HASH="$$HASH (plus changes to: $$MODIFIED)";
+fi;
+echo $$HASH
+endef
+
+HAS_GIT := $(shell which git 2> /dev/null)
+ifeq ($(strip $(HAS_GIT)),)
+  GIT_HASH := UNKNOWN
+else
+  GIT_HASH := $(shell $(SHELL_SCRIPT))
+endif
+
+
+
 CC = g++ # use MPICC instead...
 
 VPATH = common_src:client_src:daemon_src
@@ -28,6 +53,10 @@ LDFLAGS = -dynamic -L$(CCI)/lib -lcci -lpthread -Wl,-rpath,$(CCI)/lib -L$(CUDA_H
 # (Default is to use pinned memory)
 #CFLAGS += -DDISABLE_DAEMON_PINNED_MEMORY
 #CFLAGS += -DDISABLE_CLIENT_PINNED_MEMORY
+
+CFLAGS +=  -D'GIT_COMMIT="$(GIT_HASH)"'
+# Note that the quotes are part of the value for GIT_HASH.  They ensure that
+# the macro we define on the GCC command line is a string.
 
 
 

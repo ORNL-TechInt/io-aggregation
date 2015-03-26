@@ -50,8 +50,8 @@ int main( int argc, char **argv)
         printUsage(argv[0]);
         return -1;
     }
-
-    
+   
+   
     // Make sure the GPU is in the proper compute mode, or this isn't going to work
     struct cudaDeviceProp prop;
     CUDA_CHECK_RETURN( cudaGetDeviceProperties ( &prop, 0));
@@ -79,6 +79,20 @@ int main( int argc, char **argv)
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+   
+    if (rank == 0) {
+        // Print out an initial statement about compile time and git commit
+        // hash just to ensure that the executable we're running is the one
+        // we actually expect to run.
+        //
+        // NOTE: GIT_COMMIT is expected to be defined on the compiler command
+        // line.  Check the Makefile for details.
+#ifndef GIT_COMMIT
+#define GIT_COMMIT "UNDEFINED"
+#endif
+        cerr << argv[0] << ": Compiled on " << __DATE__ << " at " << __TIME__
+             << "   Git commit hash: " << GIT_COMMIT << endl;
+    }
     
     
     unsigned char* buf;
