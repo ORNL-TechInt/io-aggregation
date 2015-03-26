@@ -112,7 +112,8 @@ void printUsage(char *name)
     cerr << "\t-s\tSeconds between writes (default " << SLEEP_SECS << ")" << endl;
     cerr << "\t  \t  Positive numbers sleep for the specified amount of time." << endl;
     cerr << "\t  \t  Negative numbers wait until the daemon says the cache is empty" << endl
-         << "\t  \t  and then sleep an additional specified number of seconds." << endl;
+         << "\t  \t  and then call sync().  Once sync() returns, the client sleeps" << endl
+         << "\t  \t  an additional specified number of seconds." << endl;
     cerr << "\t-m\tMinimun length (default " << MIN_LENGTH << ")" << endl;
     cerr << "\t-M\tMaximum length (default " << MAX_LENGTH << ")" << endl;
     
