@@ -292,7 +292,6 @@ static void handleSigchld( int sig)
 // write to a local file
 int writeLocal(void *buf, streamsize len, ofstream &outf)
 {   
-    outf.seekp( 0);
     outf.write( (const char *)buf, len);
     return 0;
 }

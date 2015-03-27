@@ -34,6 +34,8 @@ struct TimeStamp {
 };
 
 
+static uint64_t MIN64( uint64_t a, uint64_t b) { return ((a<b)?a:b); }
+
 static void initBuffer(void *buf, size_t len, unsigned seed);
 
 int main( int argc, char **argv)
@@ -96,10 +98,14 @@ int main( int argc, char **argv)
     
     
     unsigned char* buf;
+    unsigned long bufLen = cmdOpts.maxLen;
+    if (cmdOpts.maxLen) {
+        bufLen /= 2;
+    }
     bool bufIsPinned = false;
     
 #ifndef DISABLE_CLIENT_PINNED_MEMORY
-    cudaError_t cudaErr = cudaMallocHost( &buf, cmdOpts.maxLen);
+    cudaError_t cudaErr = cudaMallocHost( &buf, bufLen);
     if (cudaErr == cudaSuccess) {
         bufIsPinned = true;
     } else {
@@ -112,7 +118,7 @@ int main( int argc, char **argv)
 
     if (! bufIsPinned) {
         // either the cudaMallocHost() call failed, or it wasn't compiled in
-        buf = new unsigned char[cmdOpts.maxLen];
+        buf = new unsigned char[bufLen];
     }
     
     // If we're not using the daemon, we'll need a file we can write to
@@ -130,7 +136,7 @@ int main( int argc, char **argv)
         
     // Initialize CCI
     if (cmdOpts.useDaemon) {
-        int rc = initIo(buf, cmdOpts.maxLen, rank);
+        int rc = initIo(buf, bufLen, rank);
         if (rc) {
             cerr << "CCI error " << rc << " during initialization: " 
                  << cci_strerror( NULL,(cci_status)rc) << endl;
@@ -152,7 +158,7 @@ int main( int argc, char **argv)
         for (unsigned i = 0; i < cmdOpts.iters; i++) {           
             TimeStamp ts( len);
 
-            initBuffer(buf, len, rank + i);
+            initBuffer(buf, bufLen, rank + i);
 
             /* Sync up */
             MPI_Barrier(MPI_COMM_WORLD);
@@ -164,7 +170,17 @@ int main( int argc, char **argv)
                 size_t bytesWritten;
                 while (totalBytesWritten < len) {
                     size_t bytesToWrite = len - totalBytesWritten;
-                    writeRemote( &buf[totalBytesWritten], bytesToWrite,
+                    // This math get's a little strange: We want to write out the buffer,
+                    // starting at offset 0 and going up to len bytes, wrapping around the
+                    // end of buf as necessary.  We need to ensure we don't request a 
+                    // write size that will ever take us past the end of buf if writeRemote()
+                    // actually fullfills the entire request.
+                    bytesToWrite = MIN64( bufLen - (totalBytesWritten % bufLen), bytesToWrite);
+                    // The modulo operation is kind of confusing at first, but it's actually
+                    // pretty simple: if we aren't starting the write at the start of buf,
+                    // then we obviously can't write the full bufLen bytes.
+                    
+                    writeRemote( &buf[totalBytesWritten % bufLen], bytesToWrite,
                                  totalBytesWritten, &bytesWritten);
                     if (bytesWritten == 0) {
                         // Out of space in the GPU memory - sleep briefly to
@@ -180,8 +196,15 @@ int main( int argc, char **argv)
                 }
                 
             } else {
-                writeLocal(buf, len, outf);
-                numWriteIterations++;
+                size_t totalBytesWritten = 0;
+                outf.seekp( 0);
+                while (totalBytesWritten < len) {
+                    size_t bytesToWrite = len - totalBytesWritten;
+                    bytesToWrite = MIN64( bufLen, bytesToWrite);
+                    writeLocal(buf, bytesToWrite, outf);
+                    totalBytesWritten += bytesToWrite;
+                }
+                numWriteIterations++;  // NOTE: should we move this into the while loop?
             }
             ts.end_us = getUs();
             

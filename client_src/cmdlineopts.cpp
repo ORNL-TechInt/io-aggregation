@@ -19,6 +19,7 @@ static struct option long_options[] = {
     {"client_blocking",  no_argument,       0, 'b'},
     {"null_io",          no_argument,       0, 'n'},
     {"extra_ram",        required_argument, 0, 'e'},
+    {"half_mem",         no_argument,       0, 'h'},
     {"rma_buf",          required_argument, 0, 'r'},
     {"use_daemon",       no_argument,       0, 'd'},
     {"daemon_arg",       required_argument, 0, 'D'},
@@ -32,7 +33,7 @@ bool parseCmdLine( int argc, char **argv, CommandLineOptions &opts)
     {
         /* getopt_long stores the option index here. */
         int option_index = 0;
-        int c = getopt_long( argc, argv, "i:s:m:M:bne:r:dD:N", long_options, &option_index);
+        int c = getopt_long( argc, argv, "i:s:m:M:bne:hr:dD:N", long_options, &option_index);
 
         /* Detect the end of the options. */
         if (c == -1)
@@ -61,6 +62,9 @@ bool parseCmdLine( int argc, char **argv, CommandLineOptions &opts)
                 break;
             case 'e':
                 opts.extraRam = atoi(optarg);
+                break;
+            case 'h':
+                opts.halfMem = true;
                 break;
             case 'r':
                 opts.rmaBuf = atol(optarg);
@@ -120,7 +124,10 @@ void printUsage(char *name)
     cerr << "** NOT IMPLEMENTED **" << "\t-r\tSize of the RMA buffer (for aggregation). "
          << "In MB (default " << MAX_LENGTH / (1024*1024) << ")" << endl;
     cerr << "** NOT IMPLEMENTED **" << "\t-e\tAllocate extra memory. In MB (default " << EXTRA_RAM << ")" << endl;
-    
+    cerr << "\t-h\tOnly allocate half the memory needed for the largest write size (and therefore" << endl
+         << "\t\twrite the memory buffer twice for the largest writes).  Needed for 2GB write testing" << endl
+         << "\t\ton Titan." << endl;
+         
     cerr << "\t-d\tSend writes over to the remote daemon" << endl;
     cerr << "\t-D\tPass the argument through to the daemon" << endl;
     cerr << "\t-N\tDisable automatic startup of the remote daemon" << endl

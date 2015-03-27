@@ -19,6 +19,7 @@
 #define CLIENT_BLOCKING  false       // use CCI blocking mode on the client
 #define USE_DAEMON       false       // whether or not to hand writes off to the daemon process
 #define DAEMON_AUTOSTART true        // automatically start the daemon
+#define HALF_MEM         false       // allocate half memory for a complete write request
 struct CommandLineOptions {
 
     unsigned iters;
@@ -29,6 +30,7 @@ struct CommandLineOptions {
     bool nullIo;
     bool clientBlocking;
     size_t rmaBuf;  // in megabytes
+    bool halfMem;
     bool useDaemon;
     bool daemonAutostart;
     char **daemonArgs;   
