@@ -2,7 +2,17 @@
 \label{sec:analysis}
 
 \subsection{Experiment Setup}
-Discuss what we ran, the parameters we swept and why we chose those parameters
+\label{subsec:exp_setup}
+\todo[inline]{Discuss what we ran, the parameters we swept and why we chose those parameters}
+
+Two experiments
+First one: 8 ranks per node, 64 nodes.  The application ranks were placed on the even numbered cores and the daemon threads were pinned to the odd numbered cores. Write sizes varied from 1MB to 2GB and the daemon was run with 1, 2 \& 4 background threads.
+
+Second experiment: 16 ranks per node, 64 nodes.  The application ranks consumed all cores on the node and the daemon threads were left free to be scheduled on any core.  The daemon was run with only a single write thread.  (Results from the first experiment showed no improvement when using multiple write threads, and on this test the cores were already oversubscribed.  Adding more write threads would only exacerbate that problem.)
+
+Plots show the average node write speeds (i.e.: the sum of the write speeds reported by each rank running on the node) as seen from the perspective of the application.
+
 
 \subsection{Results}
-Discuss the results
+\label{subsec:results}
+\todo[inline]{Discuss the results}

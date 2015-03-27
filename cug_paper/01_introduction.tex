@@ -1,5 +1,42 @@
 \section{Introduction}
 \label{sec:intro}
 
-Discuss the general idea and the rationale behind it
+\todo[inline]{Discuss the general idea and the rationale behind it}
 
+
+Titan, the Cray XK7 at Oak Ridge National Laboratory, has 18,688 compute nodes. Each node consists of a 16-core AMD CPU, an NVIDIA GPU and 32GB ram. In addition, there is another 6GB of ram on each GPU card. Not surprisingly, there are applications that do not use all the resources on a compute node.
+
+Specifically, approximately one third of the applications that run on Titan do not use the GPU at all.\todo{Find a citation for this.}
+There may be good reasons for this.  Utilizing the GPU's requires changes to the application and it's possible the developers haven't had the time to do that.  It's also possible that the type of computations the application performs simply don't lend themselves to GPU-based acceleration.  Regardless of why, it's clear that not all applications are benefiting from the available hardware.
+
+\todo[inline]{Abrupt transition: we go from talking about hardware to talking about software...}
+
+In most HPC applications, filesystem writes typically follow a very 'bursty' pattern. That is, there will be long periods with no file output while the application is in a compute phase, followed by a period of intense output when the application writes its checkpoint or output files. At ORNL, the filesystem is a shared resource and other users will also be putting a varying load on it. This means that the performance that a user sees at any given time will likely vary dramatically.
+
+Having a sufficiently large write-back cache could improve applications' write performance in two ways.  First, if the cache is large enough to hold the entire write and the individual writes are far enough apart, then the application never has to wait on the filesystem.  It can write to the cache and then resume its computations while the cache drains to the filesystem.  Secondly, write performance should be more predictable. From the application's point of view, write speed would only limited by how fast data can be copied into the cache, and that is not effected by outside influences.
+
+
+
+ The GPU memory and integer cores can be used to implement such a cache without taking resources away from the main application.
+
+
+Since the GPU memory is accessed via the PCIe bus, it is generally not practical to use it as part of a process's main memory. Its bandwidth is too low and its latency is too high. However, when compared to filesystem performance - even a very fast parallel filesystem - accessing this memory is still very fast. Tests on Titan show that writing to GPU memory is at least eight times faster than writing to the filesystem, and considerably better than that if the filesystem is under heavy load. This suggests that using this memory as a large write-back cache for file I/O might help application runtimes significantly.
+
+
+
+
+
+
+
+\begin{comment}
+
+Specifically, though AMD markets the processor as having 16 cores, it actually has only 8 floating-point units. As such, some applications that are floating-point intensive run with only 8 processes per node. This actually leaves 8 cores available so long as they primarily execute integer instructions. Furthermore, some applications do not make use of the GPU and thus it, and the ram attached to it, also go unused.
+
+Since the GPU memory is accessed via the PCIe bus, it is generally not practical to use it as part of a process's main memory. Its bandwidth is too low and its latency is too high. However, when compared to filesystem performance - even a very fast parallel filesystem - accessing this memory is still very fast. Tests on Titan show that writing to GPU memory is at least eight times faster than writing to the filesystem, and considerably better than that if the filesystem is under heavy load. This suggests that using this memory as a large write-back cache for file I/O might help application runtimes significantly.
+
+In HPC applications, most filesystem writes follow a very ?bursty? pattern. That is, there will be long periods with no file output while the application is in a compute phase, followed by a short period of intense output when the application writes its checkpoint or output files. Furthermore, at ORNL, the filesystem is a shared resource and other users will also be putting a varying load on it. This means that the performance that a user sees at any given time will likely vary dramatically.
+
+Having a sufficiently large write-back cache would alleviate both of these problems. Assuming the cache is large enough, then the 'bursty' nature of the output pattern can be smoothed out since there will be time for the traffic to drain from the cache before the next burst arrives. Equally importantly, write performance should be more predictable. From the application's point of view, write speed is only limited by how fast data can be copied into the cache, and that is not effected by outside influences. The GPU memory and integer cores can be used to implement such a cache without taking resources away from the main application.
+
+This paper demonstrates a technique for providing such a write-back cache to applications. We use a synthetic benchmark to demonstrate performance without such a cache, with a cache that utilizes regular system ram and with a cache that utilizes ram on the GPU card. Performance benefits and any potential trade-offs and caveats are discussed.
+\end{comment}
