@@ -78,11 +78,70 @@ def plot_per_node_bw_non_gpu( conn, num_write_threads):
                       x_label = 'Write size (MB)',
                       y_label = 'Bandwidth (MB/s)')
                      
+                     
+# Bar chart of the per-node BW vs. write size.  Assumes 192 nodes,
+# nodes 0-63: 1 write thread, nodes 64-127: 2 write threads and
+# nodes 128-191: 4 write threads
+def plot_per_node_bw_group_by_write_thread( conn):
+    c = conn.cursor()
+    #c.execute( "SELECT max(rank) from %s;"%TABLE_NAME)
+    #max_rank = c.fetchall()[0][0]
+    
+    # Queries that we'll execute (the plot will show 3 groupings)
+    statements = ["SELECT length, SUM(bw) from %s WHERE node < 64 GROUP BY node, iteration ORDER BY length;"%TABLE_NAME,
+                  "SELECT length, SUM(bw) from %s WHERE rank >= 64 and rank < 128 GROUP BY node, iteration ORDER BY length;"%TABLE_NAME,
+                  "SELECT length, SUM(bw) from %s WHERE rank < 192 GROUP BY node, iteration ORDER BY length;"%TABLE_NAME]
+    # The GROUP BY & SUM() clauses cause us to sum the bw value for all rows
+    # with identical values for the (node, iteration) pair.  Since iteration
+    # increments on every write(), the only rows with identical (node,iteration)
+    # values will be the ones for different ranks.  (ie: no need to include
+    # length in the GROUP BY clause)
+    
+    generic_bar_plot( conn, statements, 
+                      title = 'Average Per-Node Bandwidth vs. Write Size',
+                      x_label = 'Write size (MB)',
+                      y_label = 'Bandwidth (MB/s)',
+                      legend=('1 Write Thread', '2 Write Threads',
+                              '4 Write Threads'))
+    
+
+
+# Bar chart of the per-RANK BW vs. write size.  Assumes 192 nodes,
+# nodes 0-63: 1 write thread, nodes 64-127: 2 write threads and
+# nodes 128-191: 4 write threads
+def plot_per_rank_bw_group_by_write_thread( conn):
+    c = conn.cursor()
+    #c.execute( "SELECT max(rank) from %s;"%TABLE_NAME)
+    #max_rank = c.fetchall()[0][0]
+    
+    # Queries that we'll execute (the plot will show 3 groupings)
+    statements = ["SELECT length, bw from %s WHERE node < 64 ORDER BY length;"%TABLE_NAME,
+                  "SELECT length, bw from %s WHERE rank >= 64 and rank < 128 ORDER BY length;"%TABLE_NAME,
+                  "SELECT length, bw from %s WHERE rank < 192 ORDER BY length;"%TABLE_NAME]
+    # The GROUP BY & SUM() clauses cause us to sum the bw value for all rows
+    # with identical values for the (node, iteration) pair.  Since iteration
+    # increments on every write(), the only rows with identical (node,iteration)
+    # values will be the ones for different ranks.  (ie: no need to include
+    # length in the GROUP BY clause)
+    
+    generic_bar_plot( conn, statements, 
+                      title = 'Average Per-Rank Bandwidth vs. Write Size',
+                      x_label = 'Write size (MB)',
+                      y_label = 'Bandwidth (MB/s)',
+                      legend=('1 Write Thread', '2 Write Threads',
+                              '4 Write Threads'))
+    
+    
+
+
 # Executes the specified SQL statements and generates a bar plot
 # Not exepected to be used directly - call one of the plot_*
 # functions instead.
 # Note: statements must be a list (or tuple) of strings, even if there's
 # only one...
+# NOTE: The statements must be constructed such that the independent
+# variable is the first value in each row, and the dependent variable
+# is the second.
 # Legend (if it exists) must also be an iterable
 def generic_bar_plot( conn, statements, title=None,
                        x_label=None, y_label=None, legend = None):
@@ -90,7 +149,7 @@ def generic_bar_plot( conn, statements, title=None,
     rects = [] # the Rectangle instances returned by calls to bar() below
     fig, ax = plt.subplots() # initialize the plot
     width = 0.35                # the width of the bars
-    colors = ['r','b']   # colors of the bars for the different groups
+    colors = ['b', 'g', 'r', 'c', 'm', 'y']   # colors of the bars for the different groups
     
     for i in range( len(statements)):
         c.execute( statements[i])
@@ -165,7 +224,11 @@ def generic_bar_plot( conn, statements, title=None,
     if legend:
         # TODO: figure out how to properly build the tuple
         # of rects[n][0]...
-        ax.legend( (rects[0][0], rects[1][0]), legend)
+        artists = []
+        for r in rects:
+            artists.append(r[0])
+            # 'artist' is the term used in the docs for legend()...
+        ax.legend( artists, legend)
 
 #    def autolabel(rects):
 #        # attach some text labels
