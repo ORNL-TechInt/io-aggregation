@@ -83,14 +83,14 @@ def plot_per_node_bw_non_gpu( conn, num_write_threads):
 # nodes 0-63: 1 write thread, nodes 64-127: 2 write threads and
 # nodes 128-191: 4 write threads
 def plot_per_node_bw_group_by_write_thread( conn):
-    c = conn.cursor()
+    #c = conn.cursor()
     #c.execute( "SELECT max(rank) from %s;"%TABLE_NAME)
     #max_rank = c.fetchall()[0][0]
     
     # Queries that we'll execute (the plot will show 3 groupings)
     statements = ["SELECT length, SUM(bw) from %s WHERE node < 64 GROUP BY node, iteration ORDER BY length;"%TABLE_NAME,
-                  "SELECT length, SUM(bw) from %s WHERE rank >= 64 and rank < 128 GROUP BY node, iteration ORDER BY length;"%TABLE_NAME,
-                  "SELECT length, SUM(bw) from %s WHERE rank < 192 GROUP BY node, iteration ORDER BY length;"%TABLE_NAME]
+                  "SELECT length, SUM(bw) from %s WHERE node >= 64 and node < 128 GROUP BY node, iteration ORDER BY length;"%TABLE_NAME,
+                  "SELECT length, SUM(bw) from %s WHERE node >= 128 and node < 192 GROUP BY node, iteration ORDER BY length;"%TABLE_NAME]
     # The GROUP BY & SUM() clauses cause us to sum the bw value for all rows
     # with identical values for the (node, iteration) pair.  Since iteration
     # increments on every write(), the only rows with identical (node,iteration)
@@ -110,14 +110,14 @@ def plot_per_node_bw_group_by_write_thread( conn):
 # nodes 0-63: 1 write thread, nodes 64-127: 2 write threads and
 # nodes 128-191: 4 write threads
 def plot_per_rank_bw_group_by_write_thread( conn):
-    c = conn.cursor()
+    #c = conn.cursor()
     #c.execute( "SELECT max(rank) from %s;"%TABLE_NAME)
     #max_rank = c.fetchall()[0][0]
     
     # Queries that we'll execute (the plot will show 3 groupings)
     statements = ["SELECT length, bw from %s WHERE node < 64 ORDER BY length;"%TABLE_NAME,
-                  "SELECT length, bw from %s WHERE rank >= 64 and rank < 128 ORDER BY length;"%TABLE_NAME,
-                  "SELECT length, bw from %s WHERE rank < 192 ORDER BY length;"%TABLE_NAME]
+                  "SELECT length, bw from %s WHERE node >= 64 and node < 128 ORDER BY length;"%TABLE_NAME,
+                  "SELECT length, bw from %s WHERE node >= 128 and node < 192 ORDER BY length;"%TABLE_NAME]
     # The GROUP BY & SUM() clauses cause us to sum the bw value for all rows
     # with identical values for the (node, iteration) pair.  Since iteration
     # increments on every write(), the only rows with identical (node,iteration)
@@ -131,7 +131,27 @@ def plot_per_rank_bw_group_by_write_thread( conn):
                       legend=('1 Write Thread', '2 Write Threads',
                               '4 Write Threads'))
     
+# Bar chart of the bandwidth values on just the specified ranks. (Presumably
+# the ranks for a single node).  Average the iterations, but not
+# the ranks.
+def plot_specified_rank_bw( conn, min_rank, max_rank):
+    #c = conn.cursor()
+    #c.execute( "SELECT max(rank) from %s;"%TABLE_NAME)
+    #max_rank = c.fetchall()[0][0]
     
+    statements = []
+    legend = []
+    for r in range( min_rank, max_rank):
+        statements.append(
+            "SELECT length, bw from %s WHERE rank = %d ORDER BY length;"%(TABLE_NAME,r))
+        legend.append( "Rank %d"%r)
+    
+    generic_bar_plot( conn, statements, 
+                      title = 'Per-Rank Bandwidth vs. Write Size',
+                      x_label = 'Write size (MB)',
+                      y_label = 'Bandwidth (MB/s)',
+                      legend = legend)
+
 
 
 # Executes the specified SQL statements and generates a bar plot
@@ -148,8 +168,9 @@ def generic_bar_plot( conn, statements, title=None,
     c = conn.cursor()       
     rects = [] # the Rectangle instances returned by calls to bar() below
     fig, ax = plt.subplots() # initialize the plot
-    width = 0.35                # the width of the bars
-    colors = ['b', 'g', 'r', 'c', 'm', 'y']   # colors of the bars for the different groups
+    colors = ['b', 'g', 'r', 'c', 'm', 'y',   # colors of the bars for the different groups
+              'Navy', 'LightGrey', 'Orange',
+              'Brown', 'Lime', 'DeepPink']
     
     for i in range( len(statements)):
         c.execute( statements[i])
@@ -165,7 +186,7 @@ def generic_bar_plot( conn, statements, title=None,
             length_dict[row[0]].append( row[1])
             # NumPy arrays don't have append(), so start with a list
             # (we'll convert to an array later)
-        
+       
         for k in length_dict.keys():
             length_dict[k] = np.array(length_dict[k], float)
         
@@ -200,20 +221,23 @@ def generic_bar_plot( conn, statements, title=None,
         high_err = np.array(maxes) - np.array(averages)
         
         # debugging:
-        print "Mins:", mins
-        print "Maxes:", maxes
-        print "Averages:", averages
-        print "Low error:", low_err
-        print "High error:", high_err
+        #print "Mins:", mins
+        #print "Maxes:", maxes
+        #print "Averages:", averages
+        #print "Low error:", low_err
+        #print "High error:", high_err
         
-        # plot the data
-        ind = np.arange(len(mins))  # the x locations for the groups
+        # plot the data  
+        width = 1/float(len(statements)) # width of 1 bar
+        ind = np.arange(len(mins)) # the x locations for the groups
         rects.append( ax.bar(ind + (width*i), averages, width,
-                             color=colors[i], yerr=[low_err,high_err]))
+                             color=colors[i], yerr=[low_err,high_err],
+                             ecolor='k'))
     
     
     # add some text for labels, title and axes ticks
-    ax.set_xticks(ind+width)
+    #ax.set_xticks(ind+width)
+    ax.set_xticks(ind + (width * len(statements)/2))
     ax.set_xticklabels( x_vals)
     if title:
         ax.set_title( title)
