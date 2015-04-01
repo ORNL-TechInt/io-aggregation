@@ -1,6 +1,6 @@
 
 all:
-	pdflatex paper.tex 
+	latexmk -pdf paper.tex
 #	open paper.pdf  # Mac specific; no use for Linux machines
 
 clean:
