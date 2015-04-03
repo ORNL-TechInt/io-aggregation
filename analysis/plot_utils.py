@@ -19,6 +19,11 @@ def timelines(y, xstart, xstop, color='b'):
 
 TABLE_NAME="Results"
 
+
+# These 2 plot functions aren't used - we never could get the 
+# FCFS allocator to work properly
+
+'''
 # Plot average per-rank bandwidth as a function of write size
 # Assumes:
 #  First n/2 ranks used FCFS allocator, second n/2 ranks used balanced allocator
@@ -63,12 +68,11 @@ def plot_per_node_bw( conn, num_write_threads):
                       x_label = 'Write size (MB)',
                       y_label = 'Bandwidth (MB/s)',
                       legend=('First Come/First Served', 'Balanced'))
-
-
+                      
 # Bar chart of per-node BW vs. write size.  Assumes all ranks were
 # writing the normal way (not using the GPU cache)
 def plot_per_node_bw_non_gpu( conn, num_write_threads):
-    # Queries that we'll execute (the plot will show 2 groupings)
+    # Queries that we'll execute
     statements = ["SELECT length, SUM(bw) from %s GROUP BY node, iteration ORDER BY length;" \
                   %TABLE_NAME ]
     # See above for comments about the GROUP BY & SUM() clauses
@@ -77,6 +81,91 @@ def plot_per_node_bw_non_gpu( conn, num_write_threads):
                       title = 'Average Per-Node Bandwidth vs. Write Size',
                       x_label = 'Write size (MB)',
                       y_label = 'Bandwidth (MB/s)')
+
+
+'''
+
+
+# Plot average per-rank bandwidth as a function of write size
+# Assumes the first 512 ranks used 1 write thread, the next 512 used 2 write
+# threads and the last 512 used 4 write threads
+def plot_per_rank_bw_8rpn( conn, err_bars = True):
+    
+    #c = conn.cursor()
+    #c.execute( "SELECT max(rank) from %s;"%TABLE_NAME)
+    #max_rank = c.fetchall()[0][0]
+    
+    # Queries that we'll execute (the plot will show 2 groupings)
+    statements = [
+        "SELECT length, bw from %s WHERE rank < 512 ORDER BY length;"%TABLE_NAME,
+        "SELECT length, bw from %s WHERE rank < 1024 and rank >= 512 ORDER BY length;"%TABLE_NAME,
+        "SELECT length, bw from %s WHERE rank >=1024 ORDER BY length;"%TABLE_NAME ]
+    
+    generic_bar_plot( conn, statements, 
+                      title = 'Average Per-Rank Bandwidth vs. Write Size (8 Ranks/Node)',
+                      x_label = 'Write size (MB)',
+                      y_label = 'Bandwidth (MB/s)',
+                      legend=('1 Write Thread', '2 Write Threads', '4 Write Threads'),
+                      error_bars = err_bars)
+
+# Plot average per-rank bandwidth as a function of write size
+# Assumes the first 1024 ranks used 1 write thread, next 1024 
+# use 2 write threads and remaining use 4 write threads
+def plot_per_rank_bw_16rpn( conn, err_bars = True):
+    
+    #c = conn.cursor()
+    #c.execute( "SELECT max(rank) from %s;"%TABLE_NAME)
+    #max_rank = c.fetchall()[0][0]
+    
+    # Queries that we'll execute (the plot will show 2 groupings)
+    statements = [
+        "SELECT length, bw from %s WHERE rank < 1024 ORDER BY length;"%TABLE_NAME,
+        "SELECT length, bw from %s WHERE rank >= 1024 AND rank < 2048  ORDER BY length;"%TABLE_NAME,
+        "SELECT length, bw from %s WHERE rank >= 2048 ORDER BY length;"%TABLE_NAME,]
+    
+    generic_bar_plot( conn, statements, 
+                      title = 'Average Per-Rank Bandwidth vs. Write Size (16 Ranks/Node)',
+                      x_label = 'Write size (MB)',
+                      y_label = 'Bandwidth (MB/s)',
+                      legend=('1 Write Thread', '2 Write Threads', '4 Write Threads'),
+                      error_bars = err_bars)
+
+
+# Plot bandwidth values of each rank on a single node
+# (Assumes 10 iterations of each size)
+def plot_ranks_for_single_node( conn, ranks_per_node):
+    
+    #c = conn.cursor()
+    #c.execute( "SELECT max(rank) from %s;"%TABLE_NAME)
+    #max_rank = c.fetchall()[0][0]
+    
+    statements = []
+    legend = []
+    for r in range(ranks_per_node):
+        statements.append( "SELECT length, bw from %s WHERE rank = %d AND iteration %% 10 = 0 ORDER BY length;"%(TABLE_NAME,r))
+        # iteration % 10 gives us the first iteration for all sizes
+        legend.append( "Rank %d"%r)       
+    
+    generic_bar_plot( conn, statements, 
+                      title = 'Bandwidth of Individual Ranks vs. Write Size',
+                      x_label = 'Write size (MB)',
+                      y_label = 'Bandwidth (MB/s)',
+                      legend=legend,
+                      error_bars = False)
+
+
+# Bar chart of per-rank BW vs. write size.  Assumes all ranks were
+# writing the normal way (not using the GPU cache), using 8 ranks/node
+def plot_per_rank_bw_non_gpu( conn, err_bars = True):
+    # Queries that we'll execute
+    statements = ["SELECT length, bw from %s ORDER BY length;"%TABLE_NAME ]
+    # See above for comments about the GROUP BY & SUM() clauses
+    
+    generic_bar_plot( conn, statements, 
+                      title = 'Average Per-Rank Bandwidth vs. Write Size (8 Ranks/Node)',
+                      x_label = 'Write size (MB)',
+                      y_label = 'Bandwidth (MB/s)',
+                      error_bars = err_bars)
                      
                      
 # Bar chart of the per-node BW vs. write size.  Assumes 192 nodes,
@@ -130,6 +219,27 @@ def plot_per_rank_bw_group_by_write_thread( conn):
                       y_label = 'Bandwidth (MB/s)',
                       legend=('1 Write Thread', '2 Write Threads',
                               '4 Write Threads'))
+
+
+# Bar chart of the per-node BW vs. write size.  Uses only first 64
+# nodes, assumes 16 ranks per node and 1 write thread 
+def plot_per_node_bw_no_group( conn):
+    #c = conn.cursor()
+    #c.execute( "SELECT max(rank) from %s;"%TABLE_NAME)
+    #max_rank = c.fetchall()[0][0]
+    
+    # Queries that we'll execute (the plot will show 3 groupings)
+    statements = ["SELECT length, SUM(bw) from %s WHERE node < 64 GROUP BY node, iteration ORDER BY length;"%TABLE_NAME,]
+    # The GROUP BY & SUM() clauses cause us to sum the bw value for all rows
+    # with identical values for the (node, iteration) pair.  Since iteration
+    # increments on every write(), the only rows with identical (node,iteration)
+    # values will be the ones for different ranks.  (ie: no need to include
+    # length in the GROUP BY clause)
+    
+    generic_bar_plot( conn, statements, 
+                      title = 'Average Per-Node Bandwidth vs. Write Size',
+                      x_label = 'Write size (MB)',
+                      y_label = 'Bandwidth (MB/s)')
     
 # Bar chart of the bandwidth values on just the specified ranks. (Presumably
 # the ranks for a single node).  Average the iterations, but not
@@ -164,13 +274,15 @@ def plot_specified_rank_bw( conn, min_rank, max_rank):
 # is the second.
 # Legend (if it exists) must also be an iterable
 def generic_bar_plot( conn, statements, title=None,
-                       x_label=None, y_label=None, legend = None):
+                       x_label=None, y_label=None, legend = None,
+                       error_bars = True):
     c = conn.cursor()       
     rects = [] # the Rectangle instances returned by calls to bar() below
     fig, ax = plt.subplots() # initialize the plot
-    colors = ['b', 'g', 'r', 'c', 'm', 'y',   # colors of the bars for the different groups
-              'Navy', 'LightGrey', 'Orange',
-              'Brown', 'Lime', 'DeepPink']
+       # colors of the bars for the different groups
+    colors = ['b', 'g', 'r', 'c', 'm', 'y', 'Navy', 'LightGrey', 'Orange',
+              'Brown', 'Lime', 'DeepPink', 'LightBlue', 'SandyBrown',
+              'DarkGreen', 'Indigo', 'PaleTurquoise' ]
     
     for i in range( len(statements)):
         c.execute( statements[i])
@@ -217,8 +329,12 @@ def generic_bar_plot( conn, statements, title=None,
         # the upper & lower error values as values to be added
         # or subtracted from the main value.  Hence the next two
         # lines
-        low_err = np.array(averages) - np.array(mins)
-        high_err = np.array(maxes) - np.array(averages)
+        if error_bars:
+            low_err = np.array(averages) - np.array(mins)
+            high_err = np.array(maxes) - np.array(averages)
+            err_values = [low_err, high_err]
+        else:
+            err_values = None
         
         # debugging:
         #print "Mins:", mins
@@ -231,7 +347,7 @@ def generic_bar_plot( conn, statements, title=None,
         width = 1/float(len(statements)) # width of 1 bar
         ind = np.arange(len(mins)) # the x locations for the groups
         rects.append( ax.bar(ind + (width*i), averages, width,
-                             color=colors[i], yerr=[low_err,high_err],
+                             color=colors[i], yerr=err_values,
                              ecolor='k'))
     
     
@@ -266,8 +382,6 @@ def generic_bar_plot( conn, statements, title=None,
 
     plt.show()
 
-    
-            
-            
-    
-    
+
+
+
