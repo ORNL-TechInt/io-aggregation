@@ -3,16 +3,71 @@
 
 \subsection{Experiment Setup}
 \label{subsec:exp_setup}
-\todo[inline]{Discuss what we ran, the parameters we swept and why we chose those parameters}
 
-Two experiments
-First one: 8 ranks per node, 64 nodes.  The application ranks were placed on the even numbered cores and the daemon threads were pinned to the odd numbered cores. Write sizes varied from 1MB to 2GB and the daemon was run with 1, 2 \& 4 background threads.
+In order to evaluate this software, the authors ran two series of tests: one that ran the application with 8 ranks per node and another that ran with 16 ranks per node.  Each series included tests of the daemon using 1, 2 \& 4 background write threads.  Both series also tested the write performance just using standard \texttt{write()} calls in order to get some baseline data for comparison.
 
-Second experiment: 16 ranks per node, 64 nodes.  The application ranks consumed all cores on the node and the daemon threads were left free to be scheduled on any core.  The daemon was run with only a single write thread.  (Results from the first experiment showed no improvement when using multiple write threads, and on this test the cores were already oversubscribed.  Adding more write threads would only exacerbate that problem.)
+For the first test series, the application was configured for 8 ranks per node.  As mentioned in the introduction, 'real' applications will often run on Titan using only 8 ranks per node because the AMD processor in the compute nodes only has 8 floating point units.  From the authors' perspective, this has the advantage of leaving 8 integer-only cores to run the daemon in multi-threaded mode.  For this test series, aprun was configured to pin the application ranks to the even numbered cores and the daemon was configured to pin its threads to odd numbered cores.  Furthermore, the daemon thread that processed the CCI messages was run in a mode where it continuously polled for new messages.  This  provided the lowest possible latency for message handling, but at the cost of effectively spinlocking one core. 
 
-Plots show the average node write speeds (i.e.: the sum of the write speeds reported by each rank running on the node) as seen from the perspective of the application.
+For the second test series, the application was configured for 16 ranks per node.  The daemon was again run with 1, 2 \& 4 write threads.  For this series, the daemon thread that handled the CCI messages was run in a mode where it would block waiting on a message.  This added some latency to the message processing, but left that core free to perform useful work when there were no messages to process.  Also for this series, no core pinning was used on the daemon.\footnote{In practical terms, a user would probably not want to use multiple write threads on the daemon if his/her applications was running 16 ranks/node since it would oversubscribe the cores.  The authors tested the daemon with 2 and 4 threads partially out of curiosity and also to keep the two test series as similar to each other as possible.}   
+
+For both test series, the daemon was configured to write each rank's data to a separate file and the test measured the application's perceived write performance as the write size increased.  Note the word 'perceived'.  What's being measured is how long it takes for each rank of the application to copy its data into the GPU memory.   The GPU cards in each of Titan's compute nodes have 6GB of RAM, though in practice only a little over 5GB is actually available to the user.  This means that for the first test series, with 8 ranks per node, write sizes of up to 512 MB were small enough for all ranks' writes to fit into the GPU memory.  For the second test series, using 16 ranks per node, write sizes up to 256MB would fit.  For both test series, once the write size exceeded the available GPU memory, the ranks would have to wait until the daemon was able to drain data out of the GPU memory and into the filesystem.
 
 
 \subsection{Results}
 \label{subsec:results}
-\todo[inline]{Discuss the results}
+
+\begin{figure}
+\includegraphics[width=\linewidth]{figures/figure_1.eps}
+\caption{Average per-rank write bandwidth using standard \texttt{write()} calls.  8 ranks per node. No GPU memory cache.} 
+\label{fig:results_base_8}
+\end{figure}
+
+Figure \ref{fig:results_base_8} shows the results of a baseline test.  The colored bars show the average values and the error bars display the minimum and maximum values.  In this test, the application wrote to the filesystem with standard \texttt{write()} calls and the GPU memory was not used at all.\footnote{The daemon process was not even started for this test.}  The results provide some baseline numbers that can be used for comparison with the tests using GPU memory.
+
+Note the sharp drop in performance between 256MB and 512MB.  On Titan, the Lustre client is configured to allow a maximum of 64MB per OST and to default to using 4 OST's per file.  Given the number of OST's available, it's statistically likely that no two output files in this test used the same OST's.  In short, write sizes of 256MB or less were cached in system memory using the existing Lustre client cache and the performance of the 512MB, 1GB and 2GB sizes is dominated by the performance of the filesystem.  In order for this work to be useful, it must obviously improve on that.
+
+\begin{figure}
+\includegraphics[width=\linewidth]{figures/figure_2.eps}
+\caption{Average per-rank write bandwidth.  8 ranks per node.} 
+\label{fig:results_8_nobars}
+\end{figure}
+
+Figure \ref{fig:results_8_nobars} shows the remaining results of the first test series.  This series was run with 8 ranks per node and with 1, 2 \& 4 write threads in the daemon.  The graph shows a number of interesting features.  The first and most obvious, is that multiple write threads decrease performance.
+\todo[inline]{Should we just forget about multiple write threads?  I could re-do the plots easily enough to only include single thread data...}
+
+Concentrating on the single thread performance, it's clear that the application benefits from using the GPU memory out to the 512MB write size.  This makes sense since eight ranks each writing 512MB is a total of 4GB and that will fit into the GPU memory.  Even at 1GB, the application sees somewhat improved performance because there is enough GPU memory to hold significant fraction of the data to be written.  It's not until the 2GB write size that the write performance is dominated by the filesystem's throughput.
+
+
+%\begin{figure}
+%\includegraphics[width=\linewidth]{figures/figure_3.eps}
+%\caption{Minimum \& maximum per-rank write bandwidth.  8 ranks per node.} 
+%\label{fig:results_8_bars}
+%\end{figure}
+
+\begin{figure}
+\includegraphics[width=\linewidth]{figures/figure_6.eps}
+\caption{Average per-rank write bandwidth using standard \texttt{write()} calls.  16 ranks per node. No GPU memory cache.} 
+\label{fig:results_base_16}
+\end{figure}
+
+\begin{figure}
+\includegraphics[width=\linewidth]{figures/figure_4.eps}
+\caption{Average per-rank write bandwidth.  16 ranks per node.} 
+\label{fig:results_16_nobars}
+\end{figure}
+
+%\begin{figure}
+%\includegraphics[width=\linewidth]{figures/figure_5.eps}
+%\caption{Minimum \& maximum per-rank write bandwidth.  16 ranks per node.} 
+%\label{fig:results_16_bars}
+%\end{figure}
+
+Figures \ref{fig:results_base_16} and \ref{fig:results_16_nobars} show the results for the second series of tests.  As noted above, this series used 16 ranks per node, plus the daemon's threads.  This meant, of course, that the cores were oversubscribed.  Notice that Figure \ref{fig:results_base_16} as the same basic shape as Figure \ref{fig:results_base_8}.  The only significant difference is that the reported speeds shown in Figure \ref{fig:results_base_16} are approximately half those shown in Figure \ref{fig:results_base_8}.  This is expected, since there are twice as many ranks writing.
+
+Figure \ref{fig:results_16_nobars} shows that again, the per-rank bandwidth is about half that shown in Figure \ref{fig:results_8_nobars} because there are twice as many ranks.  It's also clear that the application ranks see good write performance up to the 256MB write size. 
+\todo[inline]{Need a little more analysis for the 16 rank-per-node tests.}
+
+Figures \ref{fig:results_base_8} and \ref{fig:results_base_16} show that Lustre client cache can provide good write performance up to 256MB write sizes.  However, that presumes that there is, in fact, sufficient system memory available on the node \emph{and} that the individual ranks are writing to different OST's.  If a 'real' application only wrote to a single file, the Lustre cache would not provide nearly as large a benefit unless the user took additional steps to increase the stripe count of the file.  It's worth noting that if an application used the techniques demonstrated in this paper, it would see improved write performance regardless of how many OST's were used and how much system ram was available for cache.
+
+Looking at figure \ref{fig:results_16_nobars}, note the drop in performance between 16MB and 32MB and the slight downward trend from 32MB to 256MB.  This pattern also appears in Figure \ref{fig:results_8_nobars}, but is much more obvious in Figure\ref{fig:results_16_nobars}.  The authors hypothesize that this is related to the response time of the daemon.  As mentioned earlier, the daemon allocates GPU memory in blocks of up to 16MB.  Thus, if one of the ranks wants to write more than 16GB, it will need to go through more than one request/response message cycle.  However, the daemon only has a single thread to handle these messages.  When multiple ranks are sending message, they will necessarily have to wait on a response from the daemon and this slow their overall performance.  This is more noticeable in Figure\ref{fig:results_16_nobars} because there are more ranks making requests.
+In short, it appears that improving the response time of the message handling thread would be beneficial.
