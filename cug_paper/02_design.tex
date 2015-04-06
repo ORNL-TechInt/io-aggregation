@@ -70,7 +70,7 @@ The daemon maintains one or more background threads that are responsible for cop
 \label{fig:transfer_bw}
 \end{figure}
 
-Note that each write thread in the daemon has its own buffer in system memory.  Each of these buffers is deliberately kept fairly small - 16MB - in order to conserve resources.  Testing done on Titan shows that 16MB block sizes are large enough for \texttt{cudaMemcpy()} to give good performance.\cite{ac_guide}  Larger buffers would simply use up memory without improving performance noticeably. See Figure \ref{fig:transfer_bw}.
+Note that each write thread in the daemon has its own buffer in system memory.  Each of these buffers is deliberately kept fairly small - 16MB - in order to conserve resources.  Testing done on Titan shows that 16MB block sizes are large enough for \texttt{cudaMemcpy()} to give good performance.\cite{ac_guide} Larger buffers would simply use up memory without improving performance noticeably. (See Figure \ref{fig:transfer_bw}.\footnote{Figure \ref{fig:transfer_bw} differentiates between 'pinned' memory and 'pageable' memory.  Pageable memory is allocated using regular \texttt{malloc()} or \texttt{new} calls.  Pinned memory is allocated using \texttt{cudaMallocHost()} or \texttt{cudaHostAlloc()}.\cite{cuda_pinned_memory}  This work uses pinned memory exclusively.})
 
 Also note that the daemon limits the amount of memory allocated to any single request to 16MB.  This was done to provide some limited load-balancing.  If an application wants to write 512MB, it will therefore have to make 32 separate requests.  If other ranks on the node are trying to write at the same time, their requests will all be interleaved and hopefully no rank will be starved out.
 
