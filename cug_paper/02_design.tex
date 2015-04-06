@@ -13,7 +13,7 @@ I/O benchmark, it performs no actual computation; it simply writes a specified a
 Communication between the main application and the daemon happens over two different channels.  Short messages for coordination between the application and the daemon are handled using the Common Communication Interface (CCI).\cite{atchley11:cci}  Bulk data is copied to and from GPU memory using \texttt{cudaMemcpy()}.
 
 \todo[inline]{We need to figure out how to force figure \ref{fig:communications} to display as page 2 or 3.  Right now, latex is putting it on the last page.}
-\begin{figure*}[!t]
+\begin{figure*}[hp]
 \centerline{
   \subfloat[Application sends write request message to daemon]{
     \includegraphics[width=2.5in]{figures/Data_Movement/Slide09}%
