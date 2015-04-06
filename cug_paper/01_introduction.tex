@@ -14,7 +14,9 @@ Secondly, though AMD markets the processor as having 16 cores, it actually has o
 
  The unused GPU memory and integer cores can be used to implement a write-back cache without taking resources away from the main application.  This paper demonstrates a technique for providing such a cache to applications.   Runs were made on Titan using a synthetic benchmark to demonstrate performance both without such a cache and with a cache that utilizes ram on the GPU card. The results show definite performance benefits.
  
-
+%
+% Everything below is commented out.  It's text I've toyed with using, but decided not to for whatever reason
+%
 \begin{comment}
 
 Specifically, though AMD markets the processor as having 16 cores, it actually has only 8 floating-point units. As such, some applications that are floating-point intensive run with only 8 processes per node. This actually leaves 8 cores available so long as they primarily execute integer instructions. Furthermore, some applications do not make use of the GPU and thus it, and the ram attached to it, also go unused.
