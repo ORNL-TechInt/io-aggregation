@@ -32,10 +32,11 @@ Note the sharp drop in performance between 256MB and 512MB.  On Titan, the Lustr
 \label{fig:results_8_nobars}
 \end{figure}
 
-Figure \ref{fig:results_8_nobars} shows the remaining results of the first test series.  This series was run with 8 ranks per node and with 1, 2 \& 4 write threads in the daemon.  The graph shows a number of interesting features.  The first and most obvious, is that multiple write threads decrease performance.
-\todo[inline]{Should we just forget about multiple write threads?  I could re-do the plots easily enough to only include single thread data...}
+Figure \ref{fig:results_8_nobars} shows the remaining results of the first test series.  This series was run with 8 ranks per node and with 1, 2 \& 4 write threads in the daemon.  The graph shows a number of interesting features.  The first and most obvious, is that multiple write threads decrease performance.  Exactly why this is so is unclear, but it appears that having multiple threads read from the GPU's memory interfered with the individual ranks' ability to write to the GPU's memory.  
 
 Concentrating on the single thread performance, it's clear that the application benefits from using the GPU memory out to the 512MB write size.  This makes sense since eight ranks each writing 512MB is a total of 4GB and that will fit into the GPU memory.  Even at 1GB, the application sees somewhat improved performance because there is enough GPU memory to hold significant fraction of the data to be written.  It's not until the 2GB write size that the write performance is dominated by the filesystem's throughput.
+
+Also obvious from the graph is the fact that small write sizes are not particularly efficient.  For write sizes less than 4MB, copying data to the GPU memory is slower than writing to the Lustre cache.  This is not surprising given the results shown in Figure \ref{fig:transfer_bw}.
 
 
 %\begin{figure}
@@ -64,8 +65,7 @@ Concentrating on the single thread performance, it's clear that the application 
 
 Figures \ref{fig:results_base_16} and \ref{fig:results_16_nobars} show the results for the second series of tests.  As noted above, this series used 16 ranks per node, plus the daemon's threads.  This meant, of course, that the cores were oversubscribed.  Notice that Figure \ref{fig:results_base_16} as the same basic shape as Figure \ref{fig:results_base_8}.  The only significant difference is that the reported speeds shown in Figure \ref{fig:results_base_16} are approximately half those shown in Figure \ref{fig:results_base_8}.  This is expected, since there are twice as many ranks writing.
 
-Figure \ref{fig:results_16_nobars} shows that again, the per-rank bandwidth is about half that shown in Figure \ref{fig:results_8_nobars} because there are twice as many ranks.  It's also clear that the application ranks see good write performance up to the 256MB write size. 
-\todo[inline]{Need a little more analysis for the 16 rank-per-node tests.}
+Figure \ref{fig:results_16_nobars} shows that again, the per-rank bandwidth is about half that shown in Figure \ref{fig:results_8_nobars} because there are twice as many ranks.  It's also clear that the application ranks see good write performance up to the 256MB write size, which is the largest size that will entirely fit into the GPU's memory.  It's also clear that, as in the first test series, writes must be at least 4MB in order to get reasonable performance copying the data into the GPU's memory.
 
 Figures \ref{fig:results_base_8} and \ref{fig:results_base_16} show that Lustre client cache can provide good write performance up to 256MB write sizes.  However, that presumes that there is, in fact, sufficient system memory available on the node \emph{and} that the individual ranks are writing to different OST's.  If a 'real' application only wrote to a single file, the Lustre cache would not provide nearly as large a benefit unless the user took additional steps to increase the stripe count of the file.  It's worth noting that if an application used the techniques demonstrated in this paper, it would see improved write performance regardless of how many OST's were used and how much system ram was available for cache.
 
