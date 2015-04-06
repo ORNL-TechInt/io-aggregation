@@ -56,7 +56,7 @@ When it's time to write, the application sends a short message to the daemon.  T
 
 Upon receiving the reply, the application opens the CUDA memory handle and copies the specified amount of data up to the GPU memory.  When the copy has completed, the application closes the memory handle and sends a message back to the daemon say that this particular write has completed.  If the application has more data to write, it can send another write request, or else it can continue with its calculations.
 
-Note that the data has not made it out to the filesystem yet; it's just sitting in GPU memory.  Upon receiving the 'write done' message from the application, the daemon now knows it's free to 
+Note that the data has not made it out to the filesystem yet; it's just sitting in GPU memory.  Upon receiving the `write done' message from the application, the daemon now knows it's free to 
 
 The daemon maintains one or more background threads that are responsible for copying data out of GPU memory into normal system memory and then writing that data to the filesystem. 
 
@@ -68,10 +68,10 @@ Each thread copies data out of GPU memory and into a buffer in system memory.  F
 \todo[inline]{Do we need to get into the details of cuda IPC functions? cudaIpcGetMemHandle, cudaIpcOpenMemHandle, cudaIpcCloseMemHandle}
 
 
-From the application's point of view, the write has completed once the 'write done' message has been successfully sent.
+From the application's point of view, the write has completed once the `write done' message has been successfully sent.
 
 
-Once the applications sends the 'write done' message
+Once the applications sends the `write done' message
 
 \todo[inline]{Need to mention CCI - short messages, low latency.  Citation reference is "atchley11:cci"}
 
@@ -84,6 +84,6 @@ It's debatable whether this sort of load balancing is necessary or even desirabl
 \label{subsec:cray-specific}
 
 \todo[inline]{Need an introduction paragraph for this subsection.}
-The CUDA runtime can be configured to limit access to the GPU to a single thread, to multiple threads from a single process or to multiple threads from multiple processes.  On Titan, if no special options are given to qsub, the CUDA runtime will be configured for a single thread.  Since software described in this paper requires access to the GPU from multiple processes, users must switch to the appropriate compute mode.  This is done by passing the flag "-l feature=gpudefault" to qsub.\footnote{It may seem strange to have to explicitly switch to a mode called 'gpudefault'.  The naming scheme comes from the CUDA documentation.  On a standard CUDA install, the GPU would in fact default to allowing access from multiple processes.  Titan is configured differently, however.  Thus the need to explicitly tell qsub to switch to the 'default' mode.}
+The CUDA runtime can be configured to limit access to the GPU to a single thread, to multiple threads from a single process or to multiple threads from multiple processes.  On Titan, if no special options are given to qsub, the CUDA runtime will be configured for a single thread.  Since software described in this paper requires access to the GPU from multiple processes, users must switch to the appropriate compute mode.  This is done by passing the flag "-l feature=gpudefault" to qsub.\footnote{It may seem strange to have to explicitly switch to a mode called `gpudefault'.  The naming scheme comes from the CUDA documentation.  On a standard CUDA install, the GPU would in fact default to allowing access from multiple processes.  Titan is configured differently, however.  Thus the need to explicitly tell qsub to switch to the `default' mode.}
 
 \todo[inline] {talk about actually starting up the daemon - fork(), open(excl), exec() }
